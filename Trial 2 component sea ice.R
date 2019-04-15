@@ -20,6 +20,11 @@ prj = "+proj=laea +lat_0=75 +lon_0=-25 +x_0=0 +y_0=0 +datum=WGS84 +units=km +no_
 max.edge = max(c(diff(range(dat$x)), diff(range(dat$y))))/15
 bound.outer = 1000
 
+# Generate land map
+land <- mapr::mapr(dat,
+                   prj,
+                   buff = 2000)
+
 # generate simple boundary for inla.mesh.2d
 b <- mapr::meshr(dat,
                  prj,
@@ -228,6 +233,44 @@ m_1 <- inla(form,
                                    dic = T,
                                    waic = T),
             verbose = T) # switch on when trialling
+
+save.image("INLA SpaceTime 2 component Sea Ice model.RData")
+
+ggplot() +
+  geom_ribbon(aes(x = ID, ymin = `0.025quant`, ymax = `0.975quant`), data = m_1$summary.random[[2]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = mean), data = m_1$summary.random[[2]])
+
+ggplot() +
+  geom_ribbon(aes(x = ID, ymin = `0.025quant`, ymax = `0.975quant`), data = m_1$summary.random[[3]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = mean), data = m_1$summary.random[[3]])
+
+
+
+
+require(animation)
+saveVideo({
+  for (i in 1:20){
+    p1 <- ggplot() +
+      theme_bw() + ylab("") + xlab("") +
+      gg(mesh, col = m_1$summary.random$s$mean[idx$s.group == i] + m_1$summary.random$`inla.group(ice_av, n = 25, method = "cut")`$mean) +
+      scale_fill_viridis("", limits = c(-4, 16), breaks = seq(-4, 16, 4), na.value = "transparent") +
+      geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+      coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+      ggtitle(i)
+    print(p1)
+  }
+}, movie.name = "INLA_harps_20.mp4", interval = 0.5, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
+
+
+
+
+m_1$summary.random$s$mean[idx$s.group == i]
+m_1$summary.random$`inla.group(ice_av, n = 25, method = "cut")`
+
+
+
+# The seasonal pattern has been lost by shifting from 4 season cyclic model to 20 season continous model
+# How do I add seasonality to the continous model?
 
 
 
