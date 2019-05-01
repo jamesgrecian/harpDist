@@ -10,7 +10,7 @@ require(sf)
 require(viridis)
 source("discrete_gradient.R")
 
-dat <- readRDS("harp data/harps500_indexed.rds")
+dat <- readRDS("harp data/harps2500_indexed.rds")
 dat <- dat %>% mutate(x = x/1000,
                       y = y/1000)
 # Define albers projection
@@ -217,13 +217,23 @@ pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu a
 # Model formula
 # Model failed when passing all depth data - so group it instead...
 # see ?inla.group for more info
-form <- y ~ 0 + b0 +
+f_1 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
   f(inla.group(ice_av, n = 25, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
   f(inla.group(ice_dev, n = 25, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
+f_2 <- y ~ 0 + b0 +
+  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
+  f(inla.group(ice_av, n = 25, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+
+f_3 <- y ~ 0 + b0 +
+  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
+
+# previous knowledge
+start_vals <- readRDS("start_vals.rds")
+
 # Fit the model
-m_1 <- inla(form,
+m_1 <- inla(f_1,
             family = 'poisson', 
             data = inla.stack.data(stk),
             control.predictor = list(A = inla.stack.A(stk)),
@@ -232,45 +242,50 @@ m_1 <- inla(form,
             control.compute = list(config = TRUE,
                                    dic = T,
                                    waic = T),
+            control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
-save.image("INLA SpaceTime 2 component Sea Ice model.RData")
+m_2 <- inla(f_2,
+            family = 'poisson', 
+            data = inla.stack.data(stk),
+            control.predictor = list(A = inla.stack.A(stk)),
+            E = exposure,
+            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+            control.compute = list(config = TRUE,
+                                   dic = T,
+                                   waic = T),
+            control.mode = list(theta = start_vals[1:4], restart = TRUE),
+            verbose = T) # switch on when trialling
 
-ggplot() +
-  geom_ribbon(aes(x = ID, ymin = `0.025quant`, ymax = `0.975quant`), data = m_1$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = mean), data = m_1$summary.random[[2]])
+m_3 <- inla(f_3,
+            family = 'poisson', 
+            data = inla.stack.data(stk),
+            control.predictor = list(A = inla.stack.A(stk)),
+            E = exposure,
+            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+            control.compute = list(config = TRUE,
+                                   dic = T,
+                                   waic = T),
+            control.mode = list(theta = start_vals[1:3], restart = TRUE),
+            verbose = T) # switch on when trialling
 
-ggplot() +
-  geom_ribbon(aes(x = ID, ymin = `0.025quant`, ymax = `0.975quant`), data = m_1$summary.random[[3]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = mean), data = m_1$summary.random[[3]])
+print(c(m_1$dic$dic,
+        m_2$dic$dic,
+        m_3$dic$dic))
 
-
-
-
-require(animation)
-saveVideo({
-  for (i in 1:20){
-    p1 <- ggplot() +
-      theme_bw() + ylab("") + xlab("") +
-      gg(mesh, col = m_1$summary.random$s$mean[idx$s.group == i] + m_1$summary.random$`inla.group(ice_av, n = 25, method = "cut")`$mean) +
-      scale_fill_viridis("", limits = c(-4, 16), breaks = seq(-4, 16, 4), na.value = "transparent") +
-      geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-      coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-      ggtitle(i)
-    print(p1)
-  }
-}, movie.name = "INLA_harps_20.mp4", interval = 0.5, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
-
-
-
-
-m_1$summary.random$s$mean[idx$s.group == i]
-m_1$summary.random$`inla.group(ice_av, n = 25, method = "cut")`
-
+1.359587e+10
+1.558215e+11
+6.864279e+15
 
 
-# The seasonal pattern has been lost by shifting from 4 season cyclic model to 20 season continous model
-# How do I add seasonality to the continous model?
+m_1$mlik[2]
+m_2$mlik[2]
+m_3$mlik[2]
+
+
+
+#save.image("INLA SpaceTime 2 component Sea Ice model.RData")
+
 
 
 
