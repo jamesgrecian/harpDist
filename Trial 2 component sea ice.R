@@ -10,7 +10,7 @@ require(sf)
 require(viridis)
 source("discrete_gradient.R")
 
-dat <- readRDS("harp data/harps2500_indexed.rds")
+dat <- readRDS("harp data/harps500_indexed.rds")
 dat <- dat %>% mutate(x = x/1000,
                       y = y/1000)
 # Define albers projection
@@ -284,7 +284,7 @@ m_3$mlik[2]
 
 
 
-#save.image("INLA SpaceTime 2 component Sea Ice model.RData")
+save.image("INLA SpaceTime 2 component Sea Ice model.RData")
 
 
 

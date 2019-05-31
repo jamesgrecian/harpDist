@@ -19,7 +19,7 @@ require(viridis)
 source("discrete_gradient.R")
 
 # Load data
-dat <- readRDS("harp data/harps500_indexed.rds")
+dat <- readRDS("harp data/harps2500_indexed.rds")
 dat <- dat %>% mutate(x = x/1000,
                       y = y/1000)
 # Define albers projection
@@ -101,7 +101,7 @@ table(ips$weight > 0) # check
 
 # Create a 1d time mesh for the time series (something weird with using cyclic)
 # This can be seasonal (1-4) but replicated across the 5 year bins...
-tmesh <- inla.mesh.1d(loc = 1:5, boundary = "cyclic")
+tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
 tmesh$loc
 (k <- length(tmesh$loc))
 
