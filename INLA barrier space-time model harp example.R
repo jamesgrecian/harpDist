@@ -16,7 +16,7 @@
 # as we don't have all populations tracked in all years
 
 # I am struggling to understand how to index the spatial field from 1:4 when the data are indexed 1:20
-# Here is how I would run the INLA model if I were only looking at the seasonal effect only
+# Here is how I would run the INLA model currently...
 
 # Load libraries
 require(inlabru)
@@ -117,7 +117,7 @@ table(ips$weight > 0) # check
 
 # Create a 1d time mesh for the annual cycle
 # This can be seasonal (1-4) but replicated across the 5 year bins...
-tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
+tmesh <- inla.mesh.1d(loc = 1:20, boundary = "free")
 tmesh$loc
 (k <- length(tmesh$loc))
 
@@ -186,14 +186,56 @@ c(i0, log(i0))
 e0 <- w.areas[agg.dat$area] * (w.t[agg.dat$time])
 summary(e0)
 
-# Add season index to the data frame as this is what the time mesh will operate on
+# Create projector matrix
+A.st <- inla.spde.make.A(mesh = smesh,
+                         loc = smesh$loc[agg.dat$area, ],
+                         group = agg.dat$time,
+                         mesh.group = tmesh)
+
+# Create space-time index
+idx <- inla.spde.make.index(name = 's',
+                            n.spde = barrier.model$f$n,
+                            n.group = k)
+
+# Define the data stack for the inla model
+stk <- inla.stack(
+  data = list(y = agg.dat$Freq, exposure = e0), 
+  A = list(A.st, 1), 
+  effects = list(idx, list(b0 = rep(1, nrow(agg.dat)))))
+
+# PC prior on temporal correlation
+pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
+
+# Model formula
+form_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
+
+# Fit the model
+# NB this will take several hours...
+m_1 <- inla(form_1,
+            family = 'poisson',
+            data = inla.stack.data(stk),
+            control.predictor = list(A = inla.stack.A(stk)),
+            E = exposure,
+            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+            control.compute = list(config = TRUE,
+                                   dic = T,
+                                   waic = T))
+
+
+# However this model estimates a spatial field for each of the 20 time points
+# Is there a way to tell INLA to group the spatial field by season?
+# The code below will fail...
 agg.dat$season = NA
 agg.dat$season[agg.dat$time %in% c(1, 5, 9, 13, 17)] <- 1
 agg.dat$season[agg.dat$time %in% c(2, 6, 10, 14, 18)] <- 2
 agg.dat$season[agg.dat$time %in% c(3, 7, 11, 15, 19)] <- 3
 agg.dat$season[agg.dat$time %in% c(4, 8, 12, 16, 20)] <- 4
 
-# Create projector matrix - base this on mesh not barrier model?
+tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
+tmesh$loc
+(k <- length(tmesh$loc))
+
+# Create projector matrix
 A.st <- inla.spde.make.A(mesh = smesh,
                          loc = smesh$loc[agg.dat$area, ],
                          group = agg.dat$season,
@@ -226,49 +268,5 @@ m_2 <- inla(form_2,
             control.compute = list(config = TRUE,
                                    dic = T,
                                    waic = T))
-print(m_2$dic$dic)
 
-### This fails but if we run the model on a time mesh 1:20 it will run...
-
-tmesh <- inla.mesh.1d(loc = 1:20, boundary = "free")
-tmesh$loc
-(k <- length(tmesh$loc))
-
-# Create projector matrix
-A.st <- inla.spde.make.A(mesh = smesh,
-                         loc = smesh$loc[agg.dat$area, ],
-                         group = agg.dat$time,
-                         mesh.group = tmesh)
-
-# Create space-time index
-idx <- inla.spde.make.index(name = 's',
-                            n.spde = barrier.model$f$n,
-                            n.group = 20)
-
-# Define the data stack for the inla model
-stk <- inla.stack(
-  data = list(y = agg.dat$Freq, exposure = e0), 
-  A = list(A.st, 1), 
-  effects = list(idx, list(b0 = rep(1, nrow(agg.dat)))))
-
-# PC prior on temporal correlation
-pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
-
-# Model formula
-form_2 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
-
-# Fit the model
-m_2 <- inla(form_2,
-            family = 'poisson',
-            data = inla.stack.data(stk),
-            control.predictor = list(A = inla.stack.A(stk)),
-            E = exposure,
-            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
-            control.compute = list(config = TRUE,
-                                   dic = T,
-                                   waic = T))
-print(m_2$dic$dic)
-
-
-
-
+# ends
