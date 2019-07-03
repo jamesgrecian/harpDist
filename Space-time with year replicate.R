@@ -5,7 +5,8 @@
 # The data are harp seal telemetry locations collated from studies going back to 1995
 # We are interested in:
 # 1. Estimating the seasonal north-south migration
-# 2. Estimating how that migration may have changed over the last 25 years
+# 2. Estimating the link between harp seal distribution and sea ice
+# 3. Estimating how the migration may changed due to climate-change induced reductions in ice cover
 
 # I have binned the data into seasons (Dec-Feb; Mar-May; Jun-Aug; Sep-Nov)
 # and into year blocks (95-99; 00-04; 05-09; 10-14; 15-19)
@@ -33,7 +34,7 @@ require(mapr)
 # You might also need the rmapshaper package
 # devtools::install_github("ateucher/rmapshaper")  
 
-# Here is a random subsample of 500 animal locations
+# Here is a random subsample of 2500 animal locations
 dat <- readRDS("harp data/harps2500_indexed.rds")
 
 # To make things a little easier later on convert the projected locations from metres to kilometres
@@ -108,7 +109,6 @@ barrier.model = inla.barrier.pcmatern(mesh,
                                       prior.range = c(50, .1),
                                       prior.sigma = c(10, 0.01))
 
-
 # Harp seal locations need to be put into an inla stack...
 # For the lgcp make sure the locations are on mesh nodes
 # Then set mesh nodes to 1 where locations are, and zero where not
@@ -143,11 +143,13 @@ polys <- SpatialPolygons(lapply(1:length(tiles), function(i) {
   Polygons(list(Polygon(p[c(1:n, 1), ])), i)
 }))
 
+#############################
+### Set up year replicate ###
+#############################
 
-###
-### The dataframe needs to be set up in such a way that all year x season interactions are included
-### Make sure there are NAs not 0s when no sampling occured
-### Currently we have nothing for year 4 - 2010:2014
+# The dataframe needs to be set up in such a way that all year x season interactions are included
+# Make sure there are NAs not 0s when no sampling occured
+# Currently we have nothing for year 4 - 2010:2014
 
 # Assign points to each polygon
 area <- factor(over(SpatialPoints(cbind(dat$x, dat$y)), polys),
@@ -182,7 +184,7 @@ for(j in 1:3) # set season, year and area as integer
   agg.dat[[j]] <- as.integer(as.character(agg.dat[[j]])) 
 str(agg.dat)
 
-# INLA input dataframe now has mesh nodes replicated 20 times
+# INLA input dataframe now has mesh nodes replicated 16 times - we have no data for 2010-14
 # All season:year combinations are represented
 # It is easy to then add the correct space-time covariates
 
@@ -239,19 +241,19 @@ stk <- inla.stack(
 pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
 
 # Model formula
-form_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
+#form_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
 
 # Fit the model
 # NB this will take several hours...
-m_1 <- inla(form_1,
-            family = 'poisson',
-            data = inla.stack.data(stk),
-            control.predictor = list(A = inla.stack.A(stk)),
-            E = exposure,
-            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
-            control.compute = list(config = TRUE,
-                                   dic = T,
-                                   waic = T))
+#m_1 <- inla(form_1,
+#            family = 'poisson',
+#            data = inla.stack.data(stk),
+#            control.predictor = list(A = inla.stack.A(stk)),
+#            E = exposure,
+#            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+#            control.compute = list(config = TRUE,
+#                                   dic = T,
+#                                   waic = T))
 
 
 # IT WORKS!!! AND IN 2.3 HOURS!!! THATS with half the mesh though... does that matter?
@@ -323,6 +325,7 @@ stk <- inla.stack(
   data = list(y = agg.dat$Freq, exposure = e0), 
   A = list(A.st, 1), 
   effects = list(idx, list(b0 = rep(1, nrow(agg.dat)),
+                           ice = agg.dat$ice,
                            ice_av = agg.dat$av_ice,
                            ice_dev = agg.dat$ice - agg.dat$av_ice)))
 
@@ -340,8 +343,14 @@ f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group =
 # model this as the additive effect of average ice and year specific deviation from average
 f_2 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice_av, n = 25, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
-  f(inla.group(ice_dev, n = 25, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+  f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
+  f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+
+# Is it better just to model the actual ice - not as seasonal variations?
+f_3 <- y ~ 0 + b0 +
+  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
+  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+
 
 # previous knowledge
 start_vals <- readRDS("start_vals.rds")
@@ -357,6 +366,19 @@ m_2 <- inla(f_2,
                                    dic = T,
                                    waic = T),
             control.mode = list(theta = start_vals, restart = TRUE),
+            verbose = T) # switch on when trialling
+
+# Fit the model in 4 hours
+m_3 <- inla(f_3,
+            family = 'poisson', 
+            data = inla.stack.data(stk),
+            control.predictor = list(A = inla.stack.A(stk)),
+            E = exposure,
+            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+            control.compute = list(config = TRUE,
+                                   dic = T,
+                                   waic = T),
+#            control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
 
@@ -375,8 +397,74 @@ saveVideo({
 }, movie.name = "INLA_harps_grouped.mp4", interval = 1, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
 
 
+
+
+p1 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 1]) +
+  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle(1)
+p2 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 2]) +
+  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle(2)
+p3 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 3]) +
+  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle(3)
+p4 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 4]) +
+  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle(4)
+
+quartz(width = 10, height = 10)
+gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
+quartz.save("Replicate year spatial field.jpeg",
+            type = "jpeg",
+            dev = dev.cur(),
+            dpi = 500)
+dev.off()
+
+
+pals <- tibble(group = idx$s.group,
+               vals = m_2$summary.random$s$mean)
+ggplot() +
+  geom_sf(aes(colour = pals$vals[pals$group == 3]), data = ips)
+  
+ggplot() +  
+  gg(mesh, col = pals$vals[pals$group == 1]) +
+  facet_wrap(~pals$group)
+
+
+
 ggplot() +
   theme_bw() + ylab("") + xlab("") +
+  inlabru::gg(mesh) + 
+  geom_sf(aes(), data = st_as_sf(dat, coords = c("lon", "lat"))
+          %>% st_set_crs("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  facet_wrap(~index)
+
+
+
+require(viridis)
+
+ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh) +
+  geom_sf(aes(), data = ips)
+  
   gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 1]) + 
   scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
   geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
@@ -385,8 +473,8 @@ ggplot() +
 
 
 p1 <- ggplot() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[2]]) +
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[2]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[2]]) +
   xlab("Sea Ice Concentration (%)")
 
 p2 <- ggplot() +
@@ -413,7 +501,128 @@ quartz.save("2 component ice output.jpeg",
 dev.off()
 
 
+foo <- cbind.data.frame(ips %>% st_coordinates(),
+                        as.matrix(A.st) %*% m_3$summary.random$s$mean)
+names(foo) <- c("x", "y", "z")
+ggplot() + 
+  geom_point(aes(x = x, y = y, colour = z), data = foo)
+su
 
+# Marginals
+foo <- m_2$marginals.hyperpar %>% map_dfr(~ .x %>% as_tibble(), .id = "name")
+ggplot() + 
+  geom_line(aes(x = x, y = y), data = foo) +
+  ylab("Density") + xlab("") +
+  facet_wrap(~ name, ncol = 1, scales = "free")
+
+
+
+
+foo <- inla.posterior.sample(n = 1000, result = m_2, use.improved.mean = T)
+effect <- "APredictor"
+id.effect <- which(m_2$misc$configs$contents$tag == effect)
+ind.effect <- m_2$misc$configs$contents$start[id.effect] - 1 + (1:m_2$misc$configs$contents$length[id.effect])
+Predictor_sample <- lapply(foo, function(x) x$latent[ind.effect])
+
+# this is a list with number of elements equal to number of iterations
+# how do you average across the iterations?
+
+preds <- Predictor_sample %>%
+  tibble() %>%
+  unnest(.id = "name") %>%
+  group_by(name) %>%
+  mutate(row = 1:n()) %>%
+  ungroup() %>%
+  group_by(row) %>%
+  summarise(mean = mean(., na.rm = T),
+            sd = sd(., na.rm = T)) %>%
+  mutate(group = rep(1:16, each = nv))
+
+require(animation)
+saveVideo({
+  for (i in 1:16){
+    p1 <- ggplot() +
+      theme_bw() + ylab("") + xlab("") +
+      gg(mesh, col = exp(preds$mean[preds$group == i])) + 
+      scale_fill_viridis("", na.value = "transparent") +
+      #  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
+      geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+      coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+      ggtitle(i)
+    print(p1)
+    }
+}, movie.name = "INLA_harps_predicted.mp4", interval = 1, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
+
+
+preds$season <- agg.dat$season
+preds$season <- agg.dat$season
+preds$year <- agg.dat$year
+
+
+preds %>%
+  group_by(season) %>%
+  slice(1:2)
+
+
+
+
+
+
+
+
+Predictor_sample %>%
+  tibble()
+
+
+
+%>%
+  glimpse()
+
+mean(Predictor_sample[[1]][1], Predictor_sample[[2]][1])
+
+
+
+Predictor_sample %>%
+  purrr::transpose() %>%
+  purrr::map_df(~rowMeans(as.data.frame(.x), na.rm = T))
+
+zoo <- plyr::aaply(plyr::laply(Predictor_sample, as.matrix), c(2,3), mean)
+
+purr:map_df()
+
+Predictor_sample %>% tibble() %>% map_df(., function(df){summarise_all(df, mean)})
+  
+  map_dfr(.)
+  
+  
+
+poo <- 
+
+    Predictor_sample %>%
+  tibble() %>%
+  rowwise() %>%
+  summarise(mean(.))
+  mutate(mean = map_dbl(., mean))
+
+  unnest(.id = "name") %>%
+  group_by(name) %>%
+  summarise(Mean = mean(.))
+
+Predictor_sample %>% map_dfr(~ .x %>% as_tibble(), .id = "name")
+
+
+
+
+ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = Predictor_sample[[1]][1:nv])
+
+
+
++ 
+  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F)
 
 
 
