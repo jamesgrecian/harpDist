@@ -2,13 +2,27 @@
 
 
 p1 <- ggplot() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_1$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_1$summary.random[[2]]) +
-  xlab("Sea Ice Concentration (%)")
+  theme_bw() +
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[2]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[2]]) +
+  ylim(0,8) +
+  xlab("Sea Ice Concentration (%)") +
+  ggtitle("Effect of sea ice concentration on harp seal occurence") +
+  geom_vline(xintercept = 15, linetype = "dashed") +
+  geom_vline(xintercept = 80, linetype = "dashed")
+
+quartz(width = 6, height = 5)
+print(p1)
+quartz.save("~/harp seals and sea ice.jpeg",
+            type = "jpeg",
+            dev = dev.cur(),
+            dpi = 500)
+dev.off()
+
 
 p2 <- ggplot() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_1$summary.random[[3]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_1$summary.random[[3]]) +
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[3]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[3]]) +
   xlab("Deviation from seasonal average sea ice concentration (%)") +
   coord_cartesian(ylim = c(0, 20))
 
