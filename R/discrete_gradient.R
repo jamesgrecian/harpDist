@@ -6,7 +6,7 @@
 # https://stackoverflow.com/questions/50148905/how-to-create-colorbars-in-ggplot-similar-to-those-created-by-lattice
 # https://github.com/tidyverse/ggplot2/issues/2673#issuecomment-402878574
 
-discrete_gradient_pal <- function(colours, bins = 10) {
+discrete_gradient_pal <- function(colours, bins) {
   ramp <- scales::colour_ramp(colours)
   
   function(x) {
@@ -18,7 +18,7 @@ discrete_gradient_pal <- function(colours, bins = 10) {
   }
 }
 
-scale_colour_discrete_gradient <- function(..., colours, bins = 10, na.value = "grey50", guide = "colourbar", aesthetics = c("colour", "fill"), colors)  {
+scale_colour_discrete_gradient <- function(..., colours, bins, na.value = "grey50", guide = "colourbar", aesthetics = c("colour", "fill"), colors)  {
   colours <- if (missing(colours)) 
     colors
   else colours
