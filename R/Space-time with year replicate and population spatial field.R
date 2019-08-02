@@ -20,11 +20,16 @@
 # 2. Seperate the populations
 # as they are different sizes and don't overlap
 
+# 3. Correct for sampling effort
+# as we don't have the same number of animals tracked in each time period
+# and different tags produce different numbers of locations
+
 # Load libraries
 require(inlabru)
 require(INLA)
 require(tidyverse)
 require(sf)
+require(viridis)
 
 # You'll need my 'mapr' package from github
 # custom functions for mapping and plotting
@@ -34,7 +39,7 @@ require(mapr)
 # devtools::install_github("ateucher/rmapshaper")  
 
 # Here is a random subsample of 2500 animal locations
-dat <- readRDS("harp data/harps2500_indexed.rds")
+dat <- readRDS("data/harps2500_indexed.rds")
 
 # To make things a little easier later on convert the projected locations from metres to kilometres
 dat <- dat %>% mutate(x = x/1000,
@@ -123,7 +128,7 @@ table(ips$weight > 0) # check
 
 # Create a 1d time mesh for the annual cycle
 # This can be seasonal (1-4) but replicated across the 5 year bins...
-tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
+tmesh <- inla.mesh.1d(loc = 1:5, boundary = "cyclic")
 tmesh$loc
 (k <- length(tmesh$loc))
 
@@ -169,8 +174,12 @@ dat$season[dat$index %in% c(2, 6, 10, 14, 18)] <- 2
 dat$season[dat$index %in% c(3, 7, 11, 15, 19)] <- 3
 dat$season[dat$index %in% c(4, 8, 12, 16, 20)] <- 4
 
+##################################
+### Split by three populations ###
+##################################
+
 # Load in the population reference table
-pop_ref <- readRDS("populations.rds")
+pop_ref <- readRDS("data/populations.rds")
 
 # Match the ids with pop ref and take the corresponding population reference
 dat <- dat %>% left_join(pop_ref, by = c("id" = "ref"))
@@ -180,23 +189,22 @@ dat <- dat %>% mutate(population = case_when(location == "Newfoundland" ~ 1,
                                              location == "West Ice" ~ 2,
                                              location == "East Ice" ~ 3))
 
-<<<<<<< HEAD
-ggplot() + geom_point(aes(x = lon, y = lat, colour = factor(population)), data = dat)
+# Check populations
+p2 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  geom_sf(aes(), data = land, colour = "grey", fill = "grey") +
+  inlabru::gg(mesh) + 
+  geom_sf(aes(colour = factor(population)), data = st_as_sf(dat, coords = c("lon", "lat"))
+          %>% st_set_crs("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle("Breeding populations")
+print(p2)
 
-# How to standardise effort by number of tags deployed...?
-dat %>% group_by(index, population) %>% summarise(n_distinct(id))
-# How to standardise effort by number of locations...?
-dat %>% group_by(index, population) %>% summarise(n())
-=======
-ggplot() + geom_point(aes(x = lon, y = lat, colour = population), data = dat)
-
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-
-# what is missing?
-table(dat$index)
+# Where is there missing data?
+table(dat$index) # 11, 12, 13, 14, 15 missing year x season combos
 table(dat$season)
-table(dat$year_i)
-table(dat$population)
+table(dat$year_i) # no year 4 data - 2010 - 2014 missing
+table(dat$population) # much less data for Russia...
 
 season <- dat$season
 year <- dat$year_i
@@ -212,6 +220,31 @@ str(agg.dat)
 # INLA input dataframe now has mesh nodes replicated 48 times (16 * 3) - we have no data for 2010-14
 # All season:year combinations are represented
 # It is easy to then add the correct space-time covariates
+
+# However, to add covariates and adjust exposure for Poisson it would be easier to add the 'index' again
+# The old code was based on the 1:20 index
+agg.dat$index <- NA
+agg.dat$index[agg.dat$year == 1 & agg.dat$season == 1] <- 1
+agg.dat$index[agg.dat$year == 1 & agg.dat$season == 2] <- 2
+agg.dat$index[agg.dat$year == 1 & agg.dat$season == 3] <- 3
+agg.dat$index[agg.dat$year == 1 & agg.dat$season == 4] <- 4
+agg.dat$index[agg.dat$year == 2 & agg.dat$season == 1] <- 5
+agg.dat$index[agg.dat$year == 2 & agg.dat$season == 2] <- 6
+agg.dat$index[agg.dat$year == 2 & agg.dat$season == 3] <- 7
+agg.dat$index[agg.dat$year == 2 & agg.dat$season == 4] <- 8
+agg.dat$index[agg.dat$year == 3 & agg.dat$season == 1] <- 9
+agg.dat$index[agg.dat$year == 3 & agg.dat$season == 2] <- 10
+agg.dat$index[agg.dat$year == 3 & agg.dat$season == 3] <- 11
+agg.dat$index[agg.dat$year == 3 & agg.dat$season == 4] <- 12
+agg.dat$index[agg.dat$year == 4 & agg.dat$season == 1] <- 13
+agg.dat$index[agg.dat$year == 4 & agg.dat$season == 2] <- 14
+agg.dat$index[agg.dat$year == 4 & agg.dat$season == 3] <- 15
+agg.dat$index[agg.dat$year == 4 & agg.dat$season == 4] <- 16
+agg.dat$index[agg.dat$year == 5 & agg.dat$season == 1] <- 17
+agg.dat$index[agg.dat$year == 5 & agg.dat$season == 2] <- 18
+agg.dat$index[agg.dat$year == 5 & agg.dat$season == 3] <- 19
+agg.dat$index[agg.dat$year == 5 & agg.dat$season == 4] <- 20
+head(agg.dat)
 
 # Expected number of points needs to be defined as
 # proportional to the area of the polygon * the width of time knot
@@ -230,98 +263,41 @@ summary(w.areas)
 sum(w.areas)
 
 # Check with total area
-s.area <- gArea(b)
-s.area
+(s.area <- gArea(b))
 
 # Width of each knot
-w.t <- diag(inla.mesh.fem(tmesh)$c0)
-w.t
+(w.t <- diag(inla.mesh.fem(tmesh)$c0))
 
 # Estimate intensity function
 i0 <- n / (gArea(b) * diff(range(tmesh$loc)))
 c(i0, log(i0))
 
 # The space-time volume at each polygon and time knot
-e0 <- w.areas[agg.dat$area] #* (w.t[agg.dat$time])
-summary(e0)
+# In this case the time knots are 1 so there is no effect...
+agg.dat$exposure <- w.areas[agg.dat$area] #* (w.t[agg.dat$time])
+summary(agg.dat$exposure)
 
-# Create projector matrix
-A.st <- inla.spde.make.A(mesh = smesh,
-                         loc = smesh$loc[agg.dat$area, ],
-                         group = agg.dat$season,
-                         n.group = k,
-                         mesh.group = tmesh,
-                         repl = agg.dat$population,
-                         n.repl = 3)
+##################################
+### Correct for tagging effort ###
+##################################
 
-# Create space-time index
-idx <- inla.spde.make.index(name = 's',
-                            n.spde = barrier.model$f$n,
-                            n.group = k,
-                            n.repl = 3)
+# Need to correct the exposure for the number of seals transmitting at each time point
+# How to standardise effort by number of tags deployed...?
+# How to standardise effort by number of locations...?
+# (n_ind_i / n_locs_i) * exposure
+# Create data frame of n_ind and n_locs
+e_adj <- dat %>% group_by(index, population) %>% summarise(n_ind = n_distinct(id),
+                                                           n_locs = n(),
+                                                           adj = n_ind/n_locs)
+# add these to the INLA dataframe
+agg.dat <- left_join(agg.dat, e_adj, by = c("index", "population"))
+# adjust exposure for those time periods that we have telemetry data
+agg.dat <- agg.dat %>% mutate(exp_adj = if_else(!is.na(adj), exposure * adj, exposure))
+head(agg.dat)
 
-# Define the data stack for the inla model
-stk <- inla.stack(
-  data = list(y = agg.dat$Freq, exposure = e0), 
-  A = list(A.st, 1), 
-  effects = list(idx, list(b0 = rep(1, nrow(agg.dat)))))
-
-# PC prior on temporal correlation
-pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
-
-<<<<<<< HEAD
-=======
-# Model formula
-#form_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
-
-# Fit the model
-# NB this will take several hours...
-#m_1 <- inla(form_1,
-#            family = 'poisson',
-#            data = inla.stack.data(stk),
-#            control.predictor = list(A = inla.stack.A(stk)),
-#            E = exposure,
-#            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
-#            control.compute = list(config = TRUE,
-#                                   dic = T,
-#                                   waic = T))
-
-
-# IT WORKS!!! AND IN 2.3 HOURS!!! THATS with half the mesh though... does that matter?
-
-###
-### now to include ice...
-###
-
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-#append the sea ice data to the agg.dat
-# the old code was based on the 1:20 index
-agg.dat$index <- NA
-
-agg.dat$index[agg.dat$year == 1 & agg.dat$season == 1] <- 1
-agg.dat$index[agg.dat$year == 1 & agg.dat$season == 2] <- 2
-agg.dat$index[agg.dat$year == 1 & agg.dat$season == 3] <- 3
-agg.dat$index[agg.dat$year == 1 & agg.dat$season == 4] <- 4
-
-agg.dat$index[agg.dat$year == 2 & agg.dat$season == 1] <- 5
-agg.dat$index[agg.dat$year == 2 & agg.dat$season == 2] <- 6
-agg.dat$index[agg.dat$year == 2 & agg.dat$season == 3] <- 7
-agg.dat$index[agg.dat$year == 2 & agg.dat$season == 4] <- 8
-
-agg.dat$index[agg.dat$year == 3 & agg.dat$season == 1] <- 9
-agg.dat$index[agg.dat$year == 3 & agg.dat$season == 2] <- 10
-agg.dat$index[agg.dat$year == 3 & agg.dat$season == 3] <- 11
-agg.dat$index[agg.dat$year == 3 & agg.dat$season == 4] <- 12
-
-agg.dat$index[agg.dat$year == 4 & agg.dat$season == 1] <- 13
-agg.dat$index[agg.dat$year == 4 & agg.dat$season == 2] <- 14
-agg.dat$index[agg.dat$year == 4 & agg.dat$season == 3] <- 15
-agg.dat$index[agg.dat$year == 4 & agg.dat$season == 4] <- 16
-
-agg.dat$index[agg.dat$year == 5 & agg.dat$season == 1] <- 17
-agg.dat$index[agg.dat$year == 5 & agg.dat$season == 2] <- 18
-agg.dat$index[agg.dat$year == 5 & agg.dat$season == 3] <- 19
-agg.dat$index[agg.dat$year == 5 & agg.dat$season == 4] <- 20
+################################
+### Append sea ice covariate ###
+################################
 
 #stack all 20 raster layers together
 ice <- raster::stack(raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec94_Nov99"),
@@ -342,8 +318,6 @@ for (i in sort(unique(agg.dat$index))){
 av_ice <- raster::stackApply(ice, indices = rep(1:4, times = 5), fun = mean, na.rm = T)
 
 # append seasonal average to agg.dat
-unique(agg.dat$index)
-
 for (i in 1:4){
   av_ice_vals <- raster::extract(raster::subset(av_ice, i),
                                  ips %>% st_transform("+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs"),
@@ -352,60 +326,68 @@ for (i in 1:4){
                                                                times = length(unique(agg.dat$index[agg.dat$index %in% seq(i, 20, by = 4)])))
 }
 
+head(agg.dat)
+
+################################
+### Set up INLA model object ###
+################################
+
+# Create projector matrix
+A.st <- inla.spde.make.A(mesh = smesh,
+                         loc = smesh$loc[agg.dat$area, ],
+                         group = agg.dat$season,
+                         n.group = k,
+                         mesh.group = tmesh,
+                         repl = agg.dat$population,
+                         n.repl = 3)
+
+# Create space-time index
+idx <- inla.spde.make.index(name = 's',
+                            n.spde = barrier.model$f$n,
+                            n.group = k,
+                            n.repl = 3)
+
 # Define the data stack for the inla model
-stk <- inla.stack(
-  data = list(y = agg.dat$Freq, exposure = e0), 
-  A = list(A.st, 1), 
-  effects = list(idx, list(b0 = rep(1, nrow(agg.dat)),
-                           ice = agg.dat$ice,
-                           ice_av = agg.dat$av_ice,
-                           ice_dev = agg.dat$ice - agg.dat$av_ice)))
+stk <- inla.stack(data = list(y = agg.dat$Freq,
+                              exposure = agg.dat$exp_adj),
+                  A = list(A.st, 1),
+                  effects = list(idx,
+                                 list(b0 = rep(1, nrow(agg.dat)),
+                                      ice = agg.dat$ice,
+                                      ice_av = agg.dat$av_ice,
+                                      ice_dev = agg.dat$ice - agg.dat$av_ice)))
 
 # PC prior on temporal correlation
 pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
 
-# Model formula
-# Model failed when passing all depth data - so group it instead...
-# see ?inla.group for more info
+####################
+### INLA formula ###
+####################
 
+# all these models now include the replicated populations...
 # 'null' model of season space use only
-f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
+f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) 
 
 # are the seals responding to the ice they see in that year?
-# model this as the additive effect of average ice and year specific deviation from average
 f_2 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
-  f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
-<<<<<<< HEAD
-# can we replicate spatial field across populations?]
+# are the seals responding to average ice conditions?
 f_3 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) +
   f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
   f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
-# Is it better just to model the actual ice - not as seasonal variations?
-#f_3 <- y ~ 0 + b0 +
-#  f(s, model = barrier.model, group = s.group control.group = list(model = 'ar1', hyper = pcrho)) +
-#  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
-=======
-# Is it better just to model the actual ice - not as seasonal variations?
-f_3 <- y ~ 0 + b0 +
-  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+# start models from previous knowledge
+start_vals <- readRDS("data/start_vals.rds")
 
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-
-# previous knowledge
-start_vals <- readRDS("start_vals.rds")
-
-# Fit the model in 4 hours
-m_2 <- inla(f_2,
+# Fit the model in ~ 30 hours
+m_3 <- inla(f_3,
             family = 'poisson', 
             data = inla.stack.data(stk),
             control.predictor = list(A = inla.stack.A(stk)),
-            E = exposure,
+            E = agg.dat$exp_adj,
             control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
             control.compute = list(config = TRUE,
                                    dic = T,
@@ -413,211 +395,9 @@ m_2 <- inla(f_2,
             control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
-<<<<<<< HEAD
-# Fit the model in 32 hours
-=======
-# Fit the model in 4 hours
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-m_3 <- inla(f_3,
-            family = 'poisson', 
-            data = inla.stack.data(stk),
-            control.predictor = list(A = inla.stack.A(stk)),
-            E = exposure,
-            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
-            control.compute = list(config = TRUE,
-                                   dic = T,
-                                   waic = T),
-            #            control.mode = list(theta = start_vals, restart = TRUE),
-            verbose = T) # switch on when trialling
-
-
-require(animation)
-saveVideo({
-  for (i in 1:4){
-    p1 <- ggplot() +
-      theme_bw() + ylab("") + xlab("") +
-<<<<<<< HEAD
-      gg(smesh, col = m_2$summary.random$s$mean[(nv+1):(nv*2)]) +
-=======
-      gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == i]) +
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-      scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
-      geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-      coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-      ggtitle(i)
-    print(p1)
-  }
-}, movie.name = "INLA_harps_grouped.mp4", interval = 1, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
-
-
-
-
-p1 <- ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 1]) +
-  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  ggtitle(1)
-p2 <- ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 2]) +
-  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  ggtitle(2)
-p3 <- ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 3]) +
-  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  ggtitle(3)
-p4 <- ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 4]) +
-  scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  ggtitle(4)
-
-quartz(width = 10, height = 10)
-gridExtra::grid.arrange(p1, p2, p3, p4, ncol = 2)
-quartz.save("Replicate year spatial field.jpeg",
-            type = "jpeg",
-            dev = dev.cur(),
-            dpi = 500)
-dev.off()
-
-
-pals <- tibble(group = idx$s.group,
-               vals = m_2$summary.random$s$mean)
-ggplot() +
-  geom_sf(aes(colour = pals$vals[pals$group == 3]), data = ips)
-
-ggplot() +  
-  gg(mesh, col = pals$vals[pals$group == 1]) +
-  facet_wrap(~pals$group)
-
-
-
-ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  inlabru::gg(mesh) + 
-  geom_sf(aes(), data = st_as_sf(dat, coords = c("lon", "lat"))
-          %>% st_set_crs("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  facet_wrap(~index)
-
-
-
-require(viridis)
-
-ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh) +
-  geom_sf(aes(), data = ips)
-
-gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 1]) + 
-  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F)
-
-
-
-p1 <- ggplot() +
-<<<<<<< HEAD
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[2]]) +
-  xlab("Sea Ice Concentration (%)")
-
-p2 <- ggplot() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[3]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[3]]) +
-=======
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[2]]) +
-  xlab("Sea Ice Concentration (%)")
-
-p2 <- ggplot() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[3]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[3]]) +
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-  xlab("Deviation from seasonal average sea ice concentration (%)") +
-  coord_cartesian(ylim = c(0, 20))
-
-
-ggplot() +
-  geom_line(aes(x = ID, y = exp(mean)), data = cbind.data.frame(m_2$summary.random[[2]], m_2$summary.random[[3]])) +
-  xlab("Deviation from seasonal average sea ice concentration (%)") +
-  coord_cartesian(ylim = c(0, 20))
-
-m_2$summary.random[[2]]$mean + m_2$summary.random[[3]]$mean
-
-
-quartz(width = 10, height = 6)
-gridExtra::grid.arrange(p1, p2, ncol = 2)
-quartz.save("2 component ice output.jpeg",
-            type = "jpeg",
-            dev = dev.cur(),
-            dpi = 500)
-dev.off()
-
-
-foo <- cbind.data.frame(ips %>% st_coordinates(),
-                        as.matrix(A.st) %*% m_3$summary.random$s$mean)
-names(foo) <- c("x", "y", "z")
-ggplot() + 
-  geom_point(aes(x = x, y = y, colour = z), data = foo)
-su
-
-# Marginals
-foo <- m_2$marginals.hyperpar %>% map_dfr(~ .x %>% as_tibble(), .id = "name")
-ggplot() + 
-  geom_line(aes(x = x, y = y), data = foo) +
-  ylab("Density") + xlab("") +
-  facet_wrap(~ name, ncol = 1, scales = "free")
-
-
-
-
-foo <- inla.posterior.sample(n = 1000, result = m_2, use.improved.mean = T)
-effect <- "APredictor"
-id.effect <- which(m_2$misc$configs$contents$tag == effect)
-ind.effect <- m_2$misc$configs$contents$start[id.effect] - 1 + (1:m_2$misc$configs$contents$length[id.effect])
-Predictor_sample <- lapply(foo, function(x) x$latent[ind.effect])
-
-# this is a list with number of elements equal to number of iterations
-# how do you average across the iterations?
-
-preds <- Predictor_sample %>%
-  tibble() %>%
-  unnest(.id = "name") %>%
-  group_by(name) %>%
-  mutate(row = 1:n()) %>%
-  ungroup() %>%
-  group_by(row) %>%
-  summarise(mean = mean(., na.rm = T),
-            sd = sd(., na.rm = T)) %>%
-  mutate(group = rep(1:16, each = nv))
-
-require(animation)
-saveVideo({
-  for (i in 1:16){
-    p1 <- ggplot() +
-      theme_bw() + ylab("") + xlab("") +
-      gg(mesh, col = exp(preds$mean[preds$group == i])) + 
-      scale_fill_viridis("", na.value = "transparent") +
-      #  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
-      geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-      coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-      ggtitle(i)
-    print(p1)
-  }
-}, movie.name = "INLA_harps_predicted.mp4", interval = 1, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
-
-
-<<<<<<< HEAD
+###################################
+### Summarise the model outputs ###
+###################################
 
 # Use Finn's nice interpolation in the gg function to generate faceted plot for each season x population
 foo <- bind_rows(
@@ -722,86 +502,9 @@ hype <- bind_rows(
   m_3$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[5]],
                                                        model = "population replicates") %>% filter(x > 0) %>% filter(x < 10)
 )
-=======
-preds$season <- agg.dat$season
-preds$season <- agg.dat$season
-preds$year <- agg.dat$year
 
-
-preds %>%
-  group_by(season) %>%
-  slice(1:2)
-
-
-
-
-
-
-
-
-Predictor_sample %>%
-  tibble()
-
-
-
-%>%
-  glimpse()
-
-mean(Predictor_sample[[1]][1], Predictor_sample[[2]][1])
-
-
-
-Predictor_sample %>%
-  purrr::transpose() %>%
-  purrr::map_df(~rowMeans(as.data.frame(.x), na.rm = T))
-
-zoo <- plyr::aaply(plyr::laply(Predictor_sample, as.matrix), c(2,3), mean)
-
-purr:map_df()
-
-Predictor_sample %>% tibble() %>% map_df(., function(df){summarise_all(df, mean)})
-
-map_dfr(.)
-
-
-
-poo <- 
-  
-  Predictor_sample %>%
-  tibble() %>%
-  rowwise() %>%
-  summarise(mean(.))
-mutate(mean = map_dbl(., mean))
-
-unnest(.id = "name") %>%
-  group_by(name) %>%
-  summarise(Mean = mean(.))
-
-Predictor_sample %>% map_dfr(~ .x %>% as_tibble(), .id = "name")
-
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-
-
-
-ggplot() +
-<<<<<<< HEAD
+p_hype <- ggplot() +
   geom_line(aes(x = x, y = y, group = group), data = hype) +
   facet_wrap( ~ group + model,
               scales = "free",
               ncol = 2)
-=======
-  theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = Predictor_sample[[1]][1:nv])
-
-
-
-+ 
-  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
-  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F)
-
-
-
->>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
-
-
