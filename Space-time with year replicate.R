@@ -401,28 +401,28 @@ saveVideo({
 
 p1 <- ggplot() +
   theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 1]) +
+  gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 1]) +
   scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
   geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
   coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
   ggtitle(1)
 p2 <- ggplot() +
   theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 2]) +
+  gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 2]) +
   scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
   geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
   coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
   ggtitle(2)
 p3 <- ggplot() +
   theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 3]) +
+  gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 3]) +
   scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
   geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
   coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
   ggtitle(3)
 p4 <- ggplot() +
   theme_bw() + ylab("") + xlab("") +
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.group == 4]) +
+  gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 4]) +
   scale_fill_viridis("", limits = c(-5, 25), breaks = seq(-5, 25, 5), na.value = "transparent") +
   geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
   coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
@@ -475,13 +475,30 @@ ggplot() +
 p1 <- ggplot() +
   geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[2]], alpha = 0.3) +
   geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[2]]) +
-  xlab("Sea Ice Concentration (%)")
+  xlab("Sea Ice Concentration (%)") +
+  ggtitle("Model 1. Contemporaneous Sea Ice data")
 
 p2 <- ggplot() +
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[2]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[2]]) +
+  xlab("Sea Ice Concentration (%)") +
+  ggtitle("Model 2. Seasonal Average Sea Ice data")
+
+p3 <- ggplot() +
   geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[3]], alpha = 0.3) +
   geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[3]]) +
   xlab("Deviation from seasonal average sea ice concentration (%)") +
-  coord_cartesian(ylim = c(0, 20))
+  coord_cartesian(ylim = c(0, 20)) +
+  ggtitle("Model 2. Deviation from Seasonal Average Sea Ice data")
+
+
+quartz(width = 18, height = 5)
+gridExtra::grid.arrange(p1, p2, p3, ncol = 3)
+quartz.save("Compare contemporaneous with seasonal average.jpeg",
+            type = "jpeg",
+            dev = dev.cur(),
+            dpi = 500)
+dev.off()
 
 
 ggplot() +
