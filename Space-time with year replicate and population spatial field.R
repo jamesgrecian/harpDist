@@ -180,12 +180,17 @@ dat <- dat %>% mutate(population = case_when(location == "Newfoundland" ~ 1,
                                              location == "West Ice" ~ 2,
                                              location == "East Ice" ~ 3))
 
+<<<<<<< HEAD
 ggplot() + geom_point(aes(x = lon, y = lat, colour = factor(population)), data = dat)
 
 # How to standardise effort by number of tags deployed...?
 dat %>% group_by(index, population) %>% summarise(n_distinct(id))
 # How to standardise effort by number of locations...?
 dat %>% group_by(index, population) %>% summarise(n())
+=======
+ggplot() + geom_point(aes(x = lon, y = lat, colour = population), data = dat)
+
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 
 # what is missing?
 table(dat$index)
@@ -264,6 +269,31 @@ stk <- inla.stack(
 # PC prior on temporal correlation
 pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
 
+<<<<<<< HEAD
+=======
+# Model formula
+#form_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho))
+
+# Fit the model
+# NB this will take several hours...
+#m_1 <- inla(form_1,
+#            family = 'poisson',
+#            data = inla.stack.data(stk),
+#            control.predictor = list(A = inla.stack.A(stk)),
+#            E = exposure,
+#            control.inla = list(int.strategy = "eb"), # strategy ='adaptive' fails
+#            control.compute = list(config = TRUE,
+#                                   dic = T,
+#                                   waic = T))
+
+
+# IT WORKS!!! AND IN 2.3 HOURS!!! THATS with half the mesh though... does that matter?
+
+###
+### now to include ice...
+###
+
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 #append the sea ice data to the agg.dat
 # the old code was based on the 1:20 index
 agg.dat$index <- NA
@@ -348,6 +378,7 @@ f_2 <- y ~ 0 + b0 +
   f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
   f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
+<<<<<<< HEAD
 # can we replicate spatial field across populations?]
 f_3 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) +
@@ -358,6 +389,13 @@ f_3 <- y ~ 0 + b0 +
 #f_3 <- y ~ 0 + b0 +
 #  f(s, model = barrier.model, group = s.group control.group = list(model = 'ar1', hyper = pcrho)) +
 #  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+=======
+# Is it better just to model the actual ice - not as seasonal variations?
+f_3 <- y ~ 0 + b0 +
+  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
+  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 
 # previous knowledge
 start_vals <- readRDS("start_vals.rds")
@@ -375,7 +413,11 @@ m_2 <- inla(f_2,
             control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
+<<<<<<< HEAD
 # Fit the model in 32 hours
+=======
+# Fit the model in 4 hours
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 m_3 <- inla(f_3,
             family = 'poisson', 
             data = inla.stack.data(stk),
@@ -394,7 +436,11 @@ saveVideo({
   for (i in 1:4){
     p1 <- ggplot() +
       theme_bw() + ylab("") + xlab("") +
+<<<<<<< HEAD
       gg(smesh, col = m_2$summary.random$s$mean[(nv+1):(nv*2)]) +
+=======
+      gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == i]) +
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
       scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
       geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
       coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
@@ -480,6 +526,7 @@ gg(mesh, col = m_2$summary.random$s$mean[idx$s.group == 1]) +
 
 
 p1 <- ggplot() +
+<<<<<<< HEAD
   geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[2]], alpha = 0.3) +
   geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[2]]) +
   xlab("Sea Ice Concentration (%)")
@@ -487,6 +534,15 @@ p1 <- ggplot() +
 p2 <- ggplot() +
   geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[3]], alpha = 0.3) +
   geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[3]]) +
+=======
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[2]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[2]]) +
+  xlab("Sea Ice Concentration (%)")
+
+p2 <- ggplot() +
+  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_2$summary.random[[3]], alpha = 0.3) +
+  geom_line(aes(x = ID, y = exp(mean)), data = m_2$summary.random[[3]]) +
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
   xlab("Deviation from seasonal average sea ice concentration (%)") +
   coord_cartesian(ylim = c(0, 20))
 
@@ -561,6 +617,7 @@ saveVideo({
 }, movie.name = "INLA_harps_predicted.mp4", interval = 1, ani.width = 750, ani.height = 750, other.opts = "-pix_fmt yuv420p -b:v 1080k")
 
 
+<<<<<<< HEAD
 
 # Use Finn's nice interpolation in the gg function to generate faceted plot for each season x population
 foo <- bind_rows(
@@ -665,13 +722,86 @@ hype <- bind_rows(
   m_3$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[5]],
                                                        model = "population replicates") %>% filter(x > 0) %>% filter(x < 10)
 )
+=======
+preds$season <- agg.dat$season
+preds$season <- agg.dat$season
+preds$year <- agg.dat$year
+
+
+preds %>%
+  group_by(season) %>%
+  slice(1:2)
+
+
+
+
+
+
+
+
+Predictor_sample %>%
+  tibble()
+
+
+
+%>%
+  glimpse()
+
+mean(Predictor_sample[[1]][1], Predictor_sample[[2]][1])
+
+
+
+Predictor_sample %>%
+  purrr::transpose() %>%
+  purrr::map_df(~rowMeans(as.data.frame(.x), na.rm = T))
+
+zoo <- plyr::aaply(plyr::laply(Predictor_sample, as.matrix), c(2,3), mean)
+
+purr:map_df()
+
+Predictor_sample %>% tibble() %>% map_df(., function(df){summarise_all(df, mean)})
+
+map_dfr(.)
+
+
+
+poo <- 
+  
+  Predictor_sample %>%
+  tibble() %>%
+  rowwise() %>%
+  summarise(mean(.))
+mutate(mean = map_dbl(., mean))
+
+unnest(.id = "name") %>%
+  group_by(name) %>%
+  summarise(Mean = mean(.))
+
+Predictor_sample %>% map_dfr(~ .x %>% as_tibble(), .id = "name")
+
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 
 
 
 ggplot() +
+<<<<<<< HEAD
   geom_line(aes(x = x, y = y, group = group), data = hype) +
   facet_wrap( ~ group + model,
               scales = "free",
               ncol = 2)
+=======
+  theme_bw() + ylab("") + xlab("") +
+  gg(mesh, col = Predictor_sample[[1]][1:nv])
+
+
+
++ 
+  scale_fill_viridis("", limits = c(-5, 15), breaks = seq(-5, 15, 5), na.value = "transparent") +
+  geom_sf(aes(), fill = "grey", colour = "grey", data = land) +
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F)
+
+
+
+>>>>>>> be8b41563369880aac6a1e1fa0371b909eb55aec
 
 
