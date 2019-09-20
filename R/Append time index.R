@@ -5,7 +5,7 @@
 require(dplyr)
 
 # Import harp seal data
-dat <- readRDS("harp data/harps2500.rds")
+dat <- readRDS("data/harps2500.rds")
 
 # Harp seal data spans 1995 to 2018
 # To simplify analysis split harp seals into 4 seasons and 5 year bins
@@ -54,6 +54,6 @@ dat$index[dat$month %in% c(6:8) & dat$year %in% c(years)] <- 19
 dat$index[dat$month %in% c(9:11) & dat$year %in% c(years)] <- 20
 
 # Output
-saveRDS(dat, "harp data/harps2500_indexed.rds")
+saveRDS(dat, "data/harps2500_indexed.rds")
 
 # ends
