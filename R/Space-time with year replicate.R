@@ -35,7 +35,7 @@ require(mapr)
 # devtools::install_github("ateucher/rmapshaper")  
 
 # Here is a random subsample of 2500 animal locations
-dat <- readRDS("harp data/harps2500_indexed.rds")
+dat <- readRDS("data/harps500_indexed.rds")
 
 # To make things a little easier later on convert the projected locations from metres to kilometres
 dat <- dat %>% mutate(x = x/1000,
@@ -341,6 +341,11 @@ f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, control.group =
 
 # are the seals responding to the ice they see in that year?
 # model this as the additive effect of average ice and year specific deviation from average
+
+f_5 <- y ~ -1 + b0 +
+  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
+  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(25, 0.05))))
+
 f_2 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
   f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
@@ -356,7 +361,7 @@ f_3 <- y ~ 0 + b0 +
 start_vals <- readRDS("start_vals.rds")
 
 # Fit the model in 4 hours
-m_2 <- inla(f_2,
+m_5 <- inla(f_5,
             family = 'poisson', 
             data = inla.stack.data(stk),
             control.predictor = list(A = inla.stack.A(stk)),
@@ -365,7 +370,7 @@ m_2 <- inla(f_2,
             control.compute = list(config = TRUE,
                                    dic = T,
                                    waic = T),
-            control.mode = list(theta = start_vals, restart = TRUE),
+#            control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
 # Fit the model in 4 hours

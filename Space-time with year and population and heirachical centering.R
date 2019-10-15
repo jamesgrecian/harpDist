@@ -1,6 +1,6 @@
-###############################################
-### Harp seal INLA barrier space-time model ###
-###############################################
+#######################################################################################################################
+### Harp seal INLA barrier space-time model with year replicate, population spatial field and heirarchical centring ###
+#######################################################################################################################
 
 # The data are harp seal telemetry locations collated from studies going back to 1995
 # We are interested in:
@@ -129,6 +129,8 @@ table(ips$weight > 0) # check
 # Create a 1d time mesh for the annual cycle
 # This can be seasonal (1-4) but replicated across the 5 year bins...
 tmesh <- inla.mesh.1d(loc = 1:5, boundary = "cyclic")
+tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
+
 tmesh$loc
 (k <- length(tmesh$loc))
 
@@ -299,14 +301,14 @@ head(agg.dat)
 ### Append sea ice covariate ###
 ################################
 
-#stack all 20 raster layers together
+# Load and stack all 20 raster layers together
 ice <- raster::stack(raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec94_Nov99"),
                      raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec99_Nov04"),
                      raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec04_Nov09"),
                      raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec09_Nov14"),
                      raster::stack("NSIDC Sea Ice/Seasonal_NSIDC_Dec14_Nov19"))
 
-# then extract only data needed by unique times..
+# Extract space-time matched data using unique times..
 agg.dat$ice <- NA
 for (i in sort(unique(agg.dat$index))){
   agg.dat$ice[agg.dat$index == i] <- raster::extract(raster::subset(ice, i),
@@ -314,19 +316,40 @@ for (i in sort(unique(agg.dat$index))){
                                                      method = "bilinear")
 }
 
-# average across years
-av_ice <- raster::stackApply(ice, indices = rep(1:4, times = 5), fun = mean, na.rm = T)
+# Use heirachical centring to seperate out space and time variation
+# Calculate the overall average sea ice concentration
+agg.dat$x_bar <- mean(agg.dat$ice, na.rm = T)
 
-# append seasonal average to agg.dat
-for (i in 1:4){
-  av_ice_vals <- raster::extract(raster::subset(av_ice, i),
-                                 ips %>% st_transform("+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +a=6378273 +b=6356889.449 +units=m +no_defs"),
-                                 method = "bilinear")
-  agg.dat$av_ice[agg.dat$index %in% seq(i, 20, by = 4)] <- rep(av_ice_vals,
-                                                               times = length(unique(agg.dat$index[agg.dat$index %in% seq(i, 20, by = 4)])))
-}
+# Calculate the mean centred average spatial pattern in sea ice
+agg.dat <- agg.dat %>% group_by(area) %>%
+  mutate(x_bar_c_s = mean(ice, na.rm = T) - x_bar) %>%
+  ungroup()
 
+# Calculate the mean centred average spatial pattern for each season in sea ice
+agg.dat <- agg.dat %>% group_by(area, season) %>%
+  mutate(x_bar_c_s_m = mean(ice, na.rm = T) - x_bar_c_s - x_bar) %>%
+  ungroup()
+
+# Calculate the residual sea ice concentration
+agg.dat <- agg.dat %>% mutate(x_res_smy = ice - x_bar_c_s_m - x_bar_c_s - x_bar)
+
+# Check
 head(agg.dat)
+
+#1:2694
+#2695:5388
+#5389:8082
+
+# Check ice
+p3 <- ggplot() +
+  theme_bw() + ylab("") + xlab("") +
+  geom_sf(aes(), data = land, colour = "grey", fill = "grey") +
+  #inlabru::gg(mesh, col = agg.dat$x_bar_c_s_m[5389:8082]) + 
+  inlabru::gg(mesh, col = agg.dat$x_res_smy[5389:8082]) + 
+  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+  ggtitle("sea ice data")
+print(p3)
+
 
 ################################
 ### Set up INLA model object ###
@@ -353,9 +376,10 @@ stk <- inla.stack(data = list(y = agg.dat$Freq,
                   A = list(A.st, 1),
                   effects = list(idx,
                                  list(b0 = rep(1, nrow(agg.dat)),
-                                      ice = agg.dat$ice,
-                                      ice_av = agg.dat$av_ice,
-                                      ice_dev = agg.dat$ice - agg.dat$av_ice)))
+                                      x_bar = agg.dat$x_bar,
+                                      x_bar_c_s = agg.dat$x_bar_c_s,
+                                      x_bar_c_s_m = agg.dat$x_bar_c_s_m,
+                                      x_res_smy = agg.dat$x_res_smy)))
 
 # PC prior on temporal correlation
 pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu and alpha (1/sd^2)
@@ -364,26 +388,18 @@ pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu a
 ### INLA formula ###
 ####################
 
-# all these models now include the replicated populations...
-# 'null' model of season space use only
-f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) 
-
-# are the seals responding to the ice they see in that year?
-f_2 <- y ~ 0 + b0 +
-  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
-
-# are the seals responding to average ice conditions?
-f_3 <- y ~ 0 + b0 +
-  f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
-  f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+# Try to fit model with heirarchical centring, population replicates and effort corrected exposure
+f_4 <- y ~ 0 + b0 + x_bar +
+  f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) + 
+  f(inla.group(x_bar_c_s, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
+  f(inla.group(x_bar_c_s_m, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
+  f(inla.group(x_res_smy, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
 # start models from previous knowledge
-start_vals <- readRDS("data/start_vals.rds")
+#start_vals <- readRDS("data/start_vals.rds")
 
-# With the cylic spline the model fits in around 6 days!
-m_3 <- inla(f_3,
+# Dropped cyclic spline to save time, the cyclic model didn't converge well...
+m_4 <- inla(f_4,
             family = 'poisson', 
             data = inla.stack.data(stk),
             control.predictor = list(A = inla.stack.A(stk)),
@@ -392,7 +408,7 @@ m_3 <- inla(f_3,
             control.compute = list(config = TRUE,
                                    dic = T,
                                    waic = T),
-            control.mode = list(theta = start_vals, restart = TRUE),
+#            control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
 
 ###################################
@@ -401,43 +417,43 @@ m_3 <- inla(f_3,
 
 # Use Finn's nice interpolation in the gg function to generate faceted plot for each season x population
 foo <- bind_rows(
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 1])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 1])[[1]]$data %>%
     as_tibble() %>% mutate(population = "NW Atlantic",
                            season = "Dec-Feb"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 2])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 2])[[1]]$data %>%
     as_tibble() %>% mutate(population = "NW Atlantic",
                            season = "Mar-May"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 3])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 3])[[1]]$data %>%
     as_tibble() %>% mutate(population = "NW Atlantic",
                            season = "Jun-Aug"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 4])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 1 & idx$s.group == 4])[[1]]$data %>%
     as_tibble() %>% mutate(population = "NW Atlantic",
                            season = "Sep-Nov"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 1])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 1])[[1]]$data %>%
     as_tibble() %>% mutate(population = "West Ice",
                            season = "Dec-Feb"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 2])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 2])[[1]]$data %>%
     as_tibble() %>% mutate(population = "West Ice",
                            season = "Mar-May"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 3])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 3])[[1]]$data %>%
     as_tibble() %>% mutate(population = "West Ice",
                            season = "Jun-Aug"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 4])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 2 & idx$s.group == 4])[[1]]$data %>%
     as_tibble() %>% mutate(population = "West Ice",
                            season = "Sep-Nov"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 1])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 1])[[1]]$data %>%
     as_tibble() %>% mutate(population = "East Ice",
                            season = "Dec-Feb"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 2])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 2])[[1]]$data %>%
     as_tibble() %>% mutate(population = "East Ice",
                            season = "Mar-May"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 3])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 3])[[1]]$data %>%
     as_tibble() %>% mutate(population = "East Ice",
                            season = "Jun-Aug"),
-  gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 4])[[1]]$data %>%
+  gg(mesh, col = m_4$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 4])[[1]]$data %>%
     as_tibble() %>% mutate(population = "East Ice",
                            season = "Sep-Nov")
-  )
+)
 
 foo$season <- factor(foo$season)
 foo$season <- fct_relevel(foo$season, "Dec-Feb", "Mar-May")
@@ -473,65 +489,112 @@ p <- ggplot() +
 
 quartz(width = 9, height = 12)
 print(p)
-quartz.save(file = "~/Desktop/posterior mean by season and population.jpeg",
+quartz.save(file = "~/Desktop/posterior mean by season and population with hierarchical ice.jpeg",
             type = "jpeg",
             dev = dev.cur(),
             dpi = 500)
 dev.off()
 
-# Hyperparameter posteriors look better too
-hype <- bind_rows(
-  m_2$marginals.hyperpar[[1]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[1]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
-  m_2$marginals.hyperpar[[2]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[2]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
-  m_2$marginals.hyperpar[[3]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[3]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
-  m_2$marginals.hyperpar[[4]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[4]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
-  m_2$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[5]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
-  m_3$marginals.hyperpar[[1]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[1]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
-  m_3$marginals.hyperpar[[2]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[2]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
-  m_3$marginals.hyperpar[[3]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[3]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
-  m_3$marginals.hyperpar[[4]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[4]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
-  m_3$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[5]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10)
-)
+# Panel plot of posterior distributions for hyperparameters
+fixed <- bind_rows(inla.tmarginal(fun = function(x) x,
+                                  marginal = m_4$marginals.fixed[[1]]) %>%
+                     as_tibble() %>%
+                     mutate(group = names(m_4$marginals.fixed)[[1]]),
+                   inla.tmarginal(fun = function(x) x,
+                                  marginal = m_4$marginals.fixed[[2]]) %>%
+                     as_tibble() %>%
+                     mutate(group = names(m_4$marginals.fixed)[[2]])
+                   ) %>%
+  mutate(group = factor(group))
 
-p_hype <- ggplot() +
-  geom_line(aes(x = x, y = y, group = group), data = hype) +
-  facet_wrap( ~ group + model,
+hype <- bind_rows(inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[1]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[1]]),
+                  inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[2]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[2]]),
+                  inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[3]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[3]]),
+                  inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[4]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[4]]),
+                  inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[5]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[5]]),
+                  inla.tmarginal(fun = function(x) x,
+                                 marginal = m_4$marginals.hyperpar[[6]]) %>%
+                    as_tibble() %>%
+                    mutate(group = names(m_4$marginals.hyperpar)[[6]])
+                  ) %>% 
+  mutate(group = factor(group))
+
+plot_df <- bind_rows(fixed, hype) %>%
+  mutate(group = factor(group, levels = c("b0", "x_bar", "Precision for inla.group(x_bar_c_s, n = 100, method = \"cut\")",
+                                          "Precision for inla.group(x_bar_c_s_m, n = 100, method = \"cut\")",
+                                          "Precision for inla.group(x_res_smy, n = 100, method = \"cut\")",
+                                          "GroupRho for s", "Theta1 for s", "Theta2 for s")))
+
+p4 <- ggplot() +
+  theme_bw() +
+  geom_line(aes(x = x, y = y, group = group), data = plot_df) +
+  #geom_vline(xintercept = 0, linetype = "dashed") +
+  ylab("Probability density") + xlab("Marginal") +
+  facet_wrap( ~ group,
               scales = "free",
               ncol = 2)
 
 
+quartz(width = 8, height = 10)
+print(p4)
+quartz.save(file = "~/Desktop/Posterior estimates of INLA parameters.jpeg",
+            type = "jpeg",
+            dev = dev.cur(),
+            dpi = 500)
+dev.off()
 
 
-p1 <- ggplot() +
+# Plot relationship with ice...
+ice_resp <- bind_rows(
+  m_4$summary.random[[2]] %>%
+    as_tibble() %>%
+    mutate(group = names(m_4$summary.random)[2]),
+  m_4$summary.random[[3]] %>%
+    as_tibble() %>%
+    mutate(group = names(m_4$summary.random)[3]),
+  m_4$summary.random[[4]] %>%
+    as_tibble() %>%
+    mutate(group = names(m_4$summary.random)[4])
+  ) %>%
+  mutate(group = factor(group))
+ice_resp$group = fct_relevel(ice_resp$group, "inla.group(x_bar_c_s, n = 100, method = \"cut\")")
+
+
+p5 <- ggplot() +
   theme_bw() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[2]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[2]]) +
-  #ylim(0,8) +
-  xlab("Sea Ice Concentration (%)") +
-  ggtitle("Effect of sea ice concentration on harp seal occurence") +
-  geom_vline(xintercept = 15, linetype = "dashed") +
-  geom_vline(xintercept = 80, linetype = "dashed")
+  geom_line(aes(x = ID, y = exp(`0.975quant`)), linetype = "dashed", data = ice_resp) +
+  geom_line(aes(x = ID, y = exp(`0.025quant`)), linetype = "dashed", data = ice_resp) +
+  geom_line(aes(x = ID, y = exp(mean)), data = ice_resp) +
+#  geom_line(aes(x = ID, y = mean), data = ice_resp) +
+  xlab("Mean Centred Sea Ice Concentration (%)") +
+  ylab("exp(mean)") +
+  facet_wrap(~ group,
+             scales = "free_y",
+             ncol = 1)
 
-p1 <- ggplot() +
-  theme_bw() +
-  geom_ribbon(aes(x = ID, ymin = exp(`0.025quant`), ymax = exp(`0.975quant`)), data = m_3$summary.random[[3]], alpha = 0.3) +
-  geom_line(aes(x = ID, y = exp(mean)), data = m_3$summary.random[[3]]) +
-  ylim(0, 150) +
-  xlab("Deviation from seasonal average sea ice concentration (%)") +
-  coord_cartesian(ylim = c(0, 50))
+quartz(width = 8, height = 10)
+print(p5)
+quartz.save(file = "~/Desktop/Relationship with ice_2.jpeg",
+            type = "jpeg",
+            dev = dev.cur(),
+            dpi = 500)
+dev.off()
 
-  xlab("Sea Ice Concentration (%)") +
-  ggtitle("Effect of sea ice concentration on harp seal occurence") +
-  geom_vline(xintercept = 15, linetype = "dashed") +
-  geom_vline(xintercept = 80, linetype = "dashed")
+
+
 

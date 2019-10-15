@@ -2,6 +2,10 @@
 ### Harp seal INLA barrier space-time model ###
 ###############################################
 
+###
+### For speed at the moment exclude the population difference...
+###
+
 # The data are harp seal telemetry locations collated from studies going back to 1995
 # We are interested in:
 # 1. Estimating the seasonal north-south migration
@@ -41,11 +45,16 @@ require(mapr)
 # Here is a random subsample of 2500 animal locations
 dat <- readRDS("data/harps2500_indexed.rds")
 
-# To make things a little easier later on convert the projected locations from metres to kilometres
-dat <- dat %>% mutate(x = x/1000,
-                      y = y/1000)
 # Define an Albers projection with km rather than m
 prj = "+proj=laea +lat_0=75 +lon_0=-25 +x_0=0 +y_0=0 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
+
+# Project lat lon to xy in km
+dat_sf <- dat %>% st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326)
+dat_sf <- dat_sf %>% st_transform(crs = prj)
+
+# Append coordinates to dataframe - should check the units of the s.e.
+dat <- dat %>% mutate(x = st_coordinates(dat_sf)[,1],
+                      y = st_coordinates(dat_sf)[,2])
 
 # For visualising the data later on generate a land shapefile using the mapr package
 land <- mapr::mapr(dat,
@@ -128,7 +137,8 @@ table(ips$weight > 0) # check
 
 # Create a 1d time mesh for the annual cycle
 # This can be seasonal (1-4) but replicated across the 5 year bins...
-tmesh <- inla.mesh.1d(loc = 1:5, boundary = "cyclic")
+#tmesh <- inla.mesh.1d(loc = 1:5, boundary = "cyclic") #with the cyclic time mesh the model takes a week...
+tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
 tmesh$loc
 (k <- length(tmesh$loc))
 
@@ -179,41 +189,43 @@ dat$season[dat$index %in% c(4, 8, 12, 16, 20)] <- 4
 ##################################
 
 # Load in the population reference table
-pop_ref <- readRDS("data/populations.rds")
+#pop_ref <- readRDS("data/populations.rds")
 
 # Match the ids with pop ref and take the corresponding population reference
-dat <- dat %>% left_join(pop_ref, by = c("id" = "ref"))
-dat <- dat %>% select("id", "date", "lat", "lon", "x", "y", "year", "month", "index", "year_i", "season", "location")
+#dat <- dat %>% left_join(pop_ref, by = c("id" = "ref"))
+#dat <- dat %>% select("id", "date", "lat", "lon", "x", "y", "year", "month", "index", "year_i", "season", "location")
 
-dat <- dat %>% mutate(population = case_when(location == "Newfoundland" ~ 1,
-                                             location == "West Ice" ~ 2,
-                                             location == "East Ice" ~ 3))
+#dat <- dat %>% mutate(population = case_when(location == "Newfoundland" ~ 1,
+#                                             location == "West Ice" ~ 2,
+#                                             location == "East Ice" ~ 3))
 
 # Check populations
-p2 <- ggplot() +
-  theme_bw() + ylab("") + xlab("") +
-  geom_sf(aes(), data = land, colour = "grey", fill = "grey") +
-  inlabru::gg(mesh) + 
-  geom_sf(aes(colour = factor(population)), data = st_as_sf(dat, coords = c("lon", "lat"))
-          %>% st_set_crs("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) +
-  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
-  ggtitle("Breeding populations")
-print(p2)
+#p2 <- ggplot() +
+#  theme_bw() + ylab("") + xlab("") +
+#  geom_sf(aes(), data = land, colour = "grey", fill = "grey") +
+#  inlabru::gg(mesh) + 
+#  geom_sf(aes(colour = factor(population)), data = st_as_sf(dat, coords = c("lon", "lat"))
+#          %>% st_set_crs("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")) +
+#  coord_sf(xlim = c(-4000, 3000), ylim = c(-4000, 3000), crs = prj, expand = F) +
+#  ggtitle("Breeding populations")
+#print(p2)
 
 # Where is there missing data?
 table(dat$index) # 11, 12, 13, 14, 15 missing year x season combos
 table(dat$season)
 table(dat$year_i) # no year 4 data - 2010 - 2014 missing
-table(dat$population) # much less data for Russia...
+#table(dat$population) # much less data for Russia...
 
 season <- dat$season
 year <- dat$year_i
-population <- dat$population
+#population <- dat$population
 
 # Use both space and time index to aggregate data
-agg.dat <- as.data.frame(table(area, season, population, year))
+agg.dat <- as.data.frame(table(area, season, year))
+#agg.dat <- as.data.frame(table(area, season, population, year))
 
-for(j in 1:4) # set season, year and area as integer
+#for(j in 1:4) # set population, season, year and area as integer
+for(j in 1:3) # set season, year and area as integer
   agg.dat[[j]] <- as.integer(as.character(agg.dat[[j]])) 
 str(agg.dat)
 
@@ -286,14 +298,23 @@ summary(agg.dat$exposure)
 # How to standardise effort by number of locations...?
 # (n_ind_i / n_locs_i) * exposure
 # Create data frame of n_ind and n_locs
-e_adj <- dat %>% group_by(index, population) %>% summarise(n_ind = n_distinct(id),
+e_adj <- dat %>% group_by(index) %>% summarise(n_ind = n_distinct(id),
                                                            n_locs = n(),
                                                            adj = n_ind/n_locs)
 # add these to the INLA dataframe
-agg.dat <- left_join(agg.dat, e_adj, by = c("index", "population"))
+agg.dat <- left_join(agg.dat, e_adj, by = c("index"))
 # adjust exposure for those time periods that we have telemetry data
 agg.dat <- agg.dat %>% mutate(exp_adj = if_else(!is.na(adj), exposure * adj, exposure))
 head(agg.dat)
+
+#e_adj <- dat %>% group_by(index, population) %>% summarise(n_ind = n_distinct(id),
+#                                                           n_locs = n(),
+#                                                           adj = n_ind/n_locs)
+# add these to the INLA dataframe
+#agg.dat <- left_join(agg.dat, e_adj, by = c("index", "population"))
+# adjust exposure for those time periods that we have telemetry data
+#agg.dat <- agg.dat %>% mutate(exp_adj = if_else(!is.na(adj), exposure * adj, exposure))
+#head(agg.dat)
 
 ################################
 ### Append sea ice covariate ###
@@ -337,15 +358,15 @@ A.st <- inla.spde.make.A(mesh = smesh,
                          loc = smesh$loc[agg.dat$area, ],
                          group = agg.dat$season,
                          n.group = k,
-                         mesh.group = tmesh,
-                         repl = agg.dat$population,
-                         n.repl = 3)
+                         mesh.group = tmesh) #,
+#                         repl = agg.dat$population,
+#                         n.repl = 3)
 
 # Create space-time index
 idx <- inla.spde.make.index(name = 's',
                             n.spde = barrier.model$f$n,
-                            n.group = k,
-                            n.repl = 3)
+                            n.group = k) #,
+#                            n.repl = 3)
 
 # Define the data stack for the inla model
 stk <- inla.stack(data = list(y = agg.dat$Freq,
@@ -353,6 +374,7 @@ stk <- inla.stack(data = list(y = agg.dat$Freq,
                   A = list(A.st, 1),
                   effects = list(idx,
                                  list(b0 = rep(1, nrow(agg.dat)),
+                                      season = agg.dat$season,
                                       ice = agg.dat$ice,
                                       ice_av = agg.dat$av_ice,
                                       ice_dev = agg.dat$ice - agg.dat$av_ice)))
@@ -366,24 +388,30 @@ pcrho <- list(theta = list(prior = 'pccor1', param = c(.7, .7))) # order is mu a
 
 # all these models now include the replicated populations...
 # 'null' model of season space use only
-f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) 
+#f_1 <- y ~ 0 + b0 + f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) 
 
 # are the seals responding to the ice they see in that year?
-f_2 <- y ~ 0 + b0 +
-  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+#f_2 <- y ~ 0 + b0 +
+#  f(s, model = barrier.model, group = s.group, control.group = list(model = 'ar1', hyper = pcrho)) +
+#  f(inla.group(ice, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
 
 # are the seals responding to average ice conditions?
-f_3 <- y ~ 0 + b0 +
+#f_3 <- y ~ 0 + b0 +
+#  f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) +
+#  f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
+#  f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+
+# are the seals responding to average ice conditions?
+f_4 <- y ~ 0 + b0 +
   f(s, model = barrier.model, group = s.group, replicate = s.repl, control.group = list(model = 'ar1', hyper = pcrho)) +
-  f(inla.group(ice_av, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01)))) +
-  f(inla.group(ice_dev, n = 100, method = "cut"), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(120, 0.01))))
+  f(interaction(inla.group(ice_av, n = 100, method = "cut"), season), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(25, 0.05)))) +
+  f(interaction(inla.group(ice_dev, n = 100, method = "cut"), season), model = 'rw2', scale.model = T, hyper = list(theta = list(prior = "pc.prec", param = c(25, 0.05))))
 
 # start models from previous knowledge
-start_vals <- readRDS("data/start_vals.rds")
+#start_vals <- readRDS("data/start_vals.rds")
 
 # With the cylic spline the model fits in around 6 days!
-m_3 <- inla(f_3,
+m_4 <- inla(f_4,
             family = 'poisson', 
             data = inla.stack.data(stk),
             control.predictor = list(A = inla.stack.A(stk)),
@@ -392,8 +420,40 @@ m_3 <- inla(f_3,
             control.compute = list(config = TRUE,
                                    dic = T,
                                    waic = T),
-            control.mode = list(theta = start_vals, restart = TRUE),
+#            control.mode = list(theta = start_vals, restart = TRUE),
             verbose = T) # switch on when trialling
+
+
+par(mfrow = c(2,2))
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$mean[1:100], ylim = c(-4, 6.5))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.025quant`[1:100])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.975quant`[1:100])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$mean[101:200], ylim = c(-4, 6.5))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.025quant`[101:200])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.975quant`[101:200])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$mean[201:300], ylim = c(-4, 6.5))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.025quant`[201:300])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.975quant`[201:300])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$mean[301:400], ylim = c(-4, 6.5))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.025quant`[301:400])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_av, n = 100, method = "cut"), season)`$`0.975quant`[301:400])
+
+par(mfrow = c(2,2))
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$mean[1:100], ylim = c(-20,15))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.025quant`[1:100])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.975quant`[1:100])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$mean[101:200], ylim = c(-20,15))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.025quant`[101:200])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.975quant`[101:200])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$mean[201:300], ylim = c(-20,15))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.025quant`[201:300])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.975quant`[201:300])
+plot(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$mean[301:400], ylim = c(-20,15))
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.025quant`[301:400])
+lines(1:100, m_4$summary.random$`interaction(inla.group(ice_dev, n = 100, method = "cut"), season)`$`0.975quant`[301:400])
+
+
+
 
 ###################################
 ### Summarise the model outputs ###
@@ -437,7 +497,7 @@ foo <- bind_rows(
   gg(mesh, col = m_3$summary.random$s$mean[idx$s.repl == 3 & idx$s.group == 4])[[1]]$data %>%
     as_tibble() %>% mutate(population = "East Ice",
                            season = "Sep-Nov")
-  )
+)
 
 foo$season <- factor(foo$season)
 foo$season <- fct_relevel(foo$season, "Dec-Feb", "Mar-May")
@@ -482,25 +542,25 @@ dev.off()
 # Hyperparameter posteriors look better too
 hype <- bind_rows(
   m_2$marginals.hyperpar[[1]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[1]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
   m_2$marginals.hyperpar[[2]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[2]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
   m_2$marginals.hyperpar[[3]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[3]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
   m_2$marginals.hyperpar[[4]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[4]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
   m_2$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_2$marginals.hyperpar)[[5]],
-                                                       model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "ignoring population") %>% filter(x > 0) %>% filter(x < 10),
   m_3$marginals.hyperpar[[1]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[1]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
   m_3$marginals.hyperpar[[2]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[2]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
   m_3$marginals.hyperpar[[3]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[3]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
   m_3$marginals.hyperpar[[4]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[4]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
+                                                         model = "population replicates") %>% filter(x > 0) %>% filter(x < 10),
   m_3$marginals.hyperpar[[5]] %>% as_tibble() %>% mutate(group = names(m_3$marginals.hyperpar)[[5]],
-                                                       model = "population replicates") %>% filter(x > 0) %>% filter(x < 10)
+                                                         model = "population replicates") %>% filter(x > 0) %>% filter(x < 10)
 )
 
 p_hype <- ggplot() +
@@ -530,7 +590,7 @@ p1 <- ggplot() +
   xlab("Deviation from seasonal average sea ice concentration (%)") +
   coord_cartesian(ylim = c(0, 50))
 
-  xlab("Sea Ice Concentration (%)") +
+xlab("Sea Ice Concentration (%)") +
   ggtitle("Effect of sea ice concentration on harp seal occurence") +
   geom_vline(xintercept = 15, linetype = "dashed") +
   geom_vline(xintercept = 80, linetype = "dashed")
