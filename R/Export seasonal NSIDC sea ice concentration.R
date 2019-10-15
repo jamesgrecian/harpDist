@@ -5,7 +5,7 @@
 # Download sea ice concentration data from NSIDC ftp site
 # Data are available either monthly or daily from 1971 to today
 
-# Harp seal data spans 1995 to 2018
+# Harp seal data spans 1995 to 2019
 # To simplify analysis split harp seals into 4 seasons and 5 year bins
 
 # Sea ice concentration needs to be aggregated into 20 raster layers (i.e. 4 x 5)
