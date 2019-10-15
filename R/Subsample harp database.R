@@ -93,7 +93,13 @@ dat <- dat[dat$lon < 100,] # drop locations above 100 E
 # Run the model through foieGras to error correct and regularise
 require(foieGras)
 fls <- foieGras::fit_ssm(dat, model = "rw", time.step = 24)
-pred <- foieGras::grab(fls, what = "predicted", as_sf = F) #this should probably be predicted... but will need tweaking for particular individuals...
+pred <- foieGras::grab(fls, what = "predicted", as_sf = F)
+
+# convert foieGras utm to xy in km
+# Define projection
+prj = "+proj=laea +lat_0=75 +lon_0=-25 +x_0=0 +y_0=0 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
+# overwrite xy coordinates
+pred[c("x", "y")] <- pred %>% st_as_sf(coords = c("lon", "lat")) %>% sf::st_set_crs(4326) %>% st_transform(prj) %>% st_coordinates()
 
 # Subsample
 out <- sample_n(pred, 2500, replace = F)
@@ -111,7 +117,7 @@ saveRDS(dat, "data/harps2500_indexed.rds")
 p1 <- ggplot() +
   geom_sf(aes(), data = mapr(pred, prj, buff = 5e5)) +
   geom_sf(aes(), data = dat %>% st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326)) +
-  coord_sf(xlim = c(-3000000, 3000000), ylim = c(-3500000, 2500000), crs = prj, expand = T)
+  coord_sf(xlim = c(-3000, 3000), ylim = c(-3500, 2500), crs = prj, expand = T)
 print(p1)
 
 
