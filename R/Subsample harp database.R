@@ -95,17 +95,24 @@ require(foieGras)
 fls <- foieGras::fit_ssm(dat, model = "rw", time.step = 24)
 pred <- foieGras::grab(fls, what = "predicted", as_sf = F) #this should probably be predicted... but will need tweaking for particular individuals...
 
-# Subsample for output...
+# Subsample
 out <- sample_n(pred, 2500, replace = F)
+
+# Save file
 saveRDS(out, "data/harps2500.rds")
 
-# Generate land shapefile for plot
-land <- mapr(pred, prj, buff = 5e5)
+# Append time index
+source("R/append_time_index.R")
+dat <- append_time_index(out)
+# Save file
+saveRDS(dat, "data/harps2500_indexed.rds")
 
+# Plot to check
 p1 <- ggplot() +
-  geom_sf(aes(), data = land) +
-  geom_sf(aes(), data = out %>% st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326)) +
+  geom_sf(aes(), data = mapr(pred, prj, buff = 5e5)) +
+  geom_sf(aes(), data = dat %>% st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326)) +
   coord_sf(xlim = c(-3000000, 3000000), ylim = c(-3500000, 2500000), crs = prj, expand = T)
 print(p1)
+
 
 # ends
