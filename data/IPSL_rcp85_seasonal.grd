@@ -1,6 +1,6 @@
 [general]
 creator=R package 'raster'
-created=2019-10-23 11:41:00
+created=2019-10-23 14:14:28
 [georeference]
 nrows=90
 ncols=360
@@ -22,4 +22,4 @@ legendtype=
 values=
 color=
 [description]
-layername=Dec14_Feb19:Mar15_May19:Jun15_Aug19:Sep15_Nov19:Dec44_Feb49:Mar45_May49:Jun45_Aug49:Sep45_Nov49:Dec94_Feb99:Mat95_May99:Jun95_Aug99:Sep95_Nov99
+layername=Dec14_Feb19:Mar15_May19:Jun15_Aug19:Sep15_Nov19:Dec44_Feb49:Mar45_May49:Jun45_Aug49:Sep45_Nov49:Dec94_Feb99:Mar95_May99:Jun95_Aug99:Sep95_Nov99

@@ -56,7 +56,7 @@ summarise_IPCC <- function(data){
   out <- raster::subset(out, 2:13)
   names(out) <- c("Dec14_Feb19", "Mar15_May19", "Jun15_Aug19", "Sep15_Nov19",
                   "Dec44_Feb49", "Mar45_May49", "Jun45_Aug49", "Sep45_Nov49",
-                  "Dec94_Feb99", "Mat95_May99", "Jun95_Aug99", "Sep95_Nov99")
+                  "Dec94_Feb99", "Mar95_May99", "Jun95_Aug99", "Sep95_Nov99")
   return(out)
 }
 
