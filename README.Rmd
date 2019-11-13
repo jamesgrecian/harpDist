@@ -1,27 +1,36 @@
+---
+output:
+  md_document:
+    variant: markdown_github
+---
+
 <!-- README.md is generated from README.Rmd. Please edit that file -->
-[![Project Status: Active – The project has reached a stable, usable
-state and is being actively
-developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 
-harpDist
-========
+[![Project Status: Active – The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 
-**harpDist** is a space-time modelling framework to estimate the impact
-of climate change on harp seal migratory behaviour.
+```{r, echo = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "README-"
+)
+```
 
-Given a set of animal telemetry data, fit a spatio-temporal log Gaussian
-Cox Process to estimate the distribution and the influence of
-environmental covariates.
+# harpDist
 
-An example of how to fit a LGCP including the Bakka barrier model is
-below:
+**harpDist** is a space-time modelling framework to estimate the impact of climate change on harp seal migratory behaviour.
 
-An example analysis
--------------------
+Given a set of animal telemetry data, fit a spatio-temporal log Gaussian Cox Process to estimate the distribution and the influence of environmental covariates.
+
+An example of how to fit a LGCP including the Bakka barrier model is below:
+
+
+
+## An example analysis
 
 Require packages and download data from repo
 
-``` r
+```{r lgcp example set up, message = F, warning = F}
 
 # Load libraries
 require(INLA)
@@ -36,12 +45,12 @@ source("R/discrete_gradient.r")
 
 # Here is a random subsample of 2500 animal locations
 dat <- readRDS("data/harps2500_indexed.rds")
+
 ```
 
-Use the `mapr` package to generate a land shapefile and the boundary for
-the INLA mesh
+Use the `mapr` package to generate a land shapefile and the boundary for the INLA mesh
 
-``` r
+```{r generate map, message = F, warning = F}
 
 # Define an Albers equal area projection using kilometres as units
 prj = "+proj=laea +lat_0=75 +lon_0=-25 +x_0=0 +y_0=0 +datum=WGS84 +units=km +no_defs +ellps=WGS84 +towgs84=0,0,0"
@@ -59,15 +68,13 @@ b <- mapr::meshr(dat,
                  Neumann = F) 
 ```
 
-Use the boundary file to generate the INLA mesh, construct the Voroni
-polygons and calculate weights
+Use the boundary file to generate the INLA mesh, construct the Voroni polygons and calculate weights
 
-``` r
+```{r mesh creation, message = F, warning = F}
 
 # Remove any animal locations that fall on land
 in.water = over(b, SpatialPoints(cbind(dat$x, dat$y), proj4string = CRS(prj)), returnList=T)[[1]]
 print(paste("There are", nrow(dat)-length(in.water), "points on land in the original polygon"))
-#> [1] "There are 62 points on land in the original polygon"
 dat <- dat[in.water,]
 
 # Define the parameters of the boundary mesh
@@ -95,11 +102,12 @@ w <- sapply(1:length(dmesh), function(i){
     return(gArea(gIntersection(dmesh[i,], b)))
   else return(0)
 })
+
 ```
 
 First fit a lgcp with matérn covariance spde
 
-``` r
+```{r non-barrier lgcp, message = F, warnings = F}
 
 # Set up a matern covariance on the 2D spde
 spde = inla.spde2.pcmatern(mesh,
@@ -136,13 +144,12 @@ fit <- inla(y ~ 0 + b0 + f(s, model = spde),
                                    waic = T))
 ```
 
-This model will ignore coastlines, but marine mammals are unlikely to
-travel across land!
+This model will ignore coastlines, but marine mammals are unlikely to travel across land!
 
 Instead fit the barrier matérn model. For details see:
-<a href="https://doi.org/10.1016/j.spasta.2019.01.002" class="uri">https://doi.org/10.1016/j.spasta.2019.01.002</a>
+https://doi.org/10.1016/j.spasta.2019.01.002
 
-``` r
+```{r barrier model, message = F, barrier = F}
 
 # Set up boundary matern model
 tl = length(mesh$graph$tv[,1]) # the number of triangles in the mesh
@@ -175,13 +182,12 @@ barrier.fit <- inla(y ~ 0 + b0 + f(s, model = barrier.model),
                control.compute = list(config = TRUE,
                                       dic = T,
                                       waic = T))
-#> Warning in inla.model.properties.generic(inla.trim.family(model), (mm[names(mm) == : Model 'rgeneric' in section 'latent' is marked as 'experimental'; changes may appear at any time.
-#>   Use this model with extra care!!! Further warnings are disabled.
+
 ```
 
 Visualise the posterior spatial fields for the two lgcp models
 
-``` r
+```{r visualise the lgcp, message = F, warning = F}
 
 # Generate a tidy plot
 preds <- dmesh %>% st_as_sf()
@@ -216,6 +222,5 @@ p <- ggplot() +
   geom_sf(aes(), colour = "white", fill = NA, data = st_as_sf(b)) +
   facet_wrap(~ model)
 print(p)
-```
 
-![](README-visualise%20the%20lgcp-1.png)
+```
