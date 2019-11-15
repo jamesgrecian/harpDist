@@ -157,6 +157,14 @@ posTri = SpatialPoints(posTri, proj4string = CRS(prj))
 normal = unlist(over(b, posTri, returnList = T)) # check which mesh triangles are inside the normal area
 barrier.triangles = setdiff(1:tl, normal)
 poly.barrier = inla.barrier.polygon(mesh, barrier.triangles)
+#> Warning in RGEOSUnaryPredFunc(spgeom, byid, "rgeos_isvalid"): Self-intersection
+#> at or near point -3996.6879684199998 -2259.7720476
+#> Warning in gUnaryUnion(mesh.polys): Invalid objects found; consider using
+#> set_RGEOS_CheckValidity(2L)
+#> Warning in RGEOSUnaryPredFunc(spgeom, byid, "rgeos_isvalid"): Self-intersection
+#> at or near point -5030.5772590200004 -2391.1795245200001
+#> Warning in gUnaryUnion(mesh.polys): Invalid objects found; consider using
+#> set_RGEOS_CheckValidity(2L)
 
 # create the matern object
 barrier.model = inla.barrier.pcmatern(mesh,
@@ -221,3 +229,116 @@ print(p)
 ```
 
 ![](README-visualise%20the%20lgcp-1.png)
+
+Add the time component
+----------------------
+
+Extend the barrier model to include a time varying spatial field
+
+``` r
+# Add time indices for inla model structure
+# This should be included in append_time_index.R
+dat$year_i <- NA
+dat$year_i[dat$index %in% c(1:4)] <- 1
+dat$year_i[dat$index %in% c(5:8)] <- 2
+dat$year_i[dat$index %in% c(9:12)] <- 3
+dat$year_i[dat$index %in% c(13:16)] <- 4
+dat$year_i[dat$index %in% c(17:20)] <- 5
+dat$season <- NA
+dat$season[dat$index %in% c(1, 5, 9, 13, 17)] <- 1
+dat$season[dat$index %in% c(2, 6, 10, 14, 18)] <- 2
+dat$season[dat$index %in% c(3, 7, 11, 15, 19)] <- 3
+dat$season[dat$index %in% c(4, 8, 12, 16, 20)] <- 4
+
+# Create a 1d time mesh for the annual cycle
+tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
+(k <- length(tmesh$loc)) # number of time periods
+#> [1] 4
+
+# Create A matrix with space and time indexing
+Ast <- inla.spde.make.A(mesh = mesh,
+                        loc = cbind(dat$x, dat$y),
+                        n.group = k,
+                        group = dat$season,
+                        group.mesh = tmesh)
+
+# Index the space mesh
+idx <- inla.spde.make.index('s', barrier.model$f$n, n.group = tmesh$n)
+
+# Calculate the exposure at each space-time point
+# In this example the time knots are equally spaced
+st.vol <- rep(w, k) #* rep(diag(inla.mesh.fem(mesh.t)$c0), m)
+
+# Create lgcp stack
+n <- nrow(dat) # number of locations
+m <- barrier.model$f$n # number of mesh nodes
+
+y <- rep(0:1, c(k * m, n))
+expected <- c(st.vol, rep(0, n))
+
+stk <- inla.stack(
+  data = list(y = y,
+              expect = expected), 
+  A = list(rbind(Diagonal(n = k * m), Ast), 1), 
+  effects = list(idx,
+                 list(a0 = rep(1, k * m + n))))
+
+# PC prior on time mesh
+pcrho <- list(prior = 'pccor1', param = c(0.7, 0.7))
+
+# model
+form <- y ~ 0 + a0 + f(s,
+                       model = barrier.model,
+                       group = s.group, 
+                       control.group = list(model = 'ar1',
+                                            hyper = list(theta = pcrho)))
+
+barrier.fit <- inla(form,
+                    family = 'poisson',
+                    data = inla.stack.data(stk),
+                    E = expect,
+                    control.predictor = list(A = inla.stack.A(stk)),
+                    control.inla = list(strategy = 'adaptive'))
+```
+
+Plot the output
+---------------
+
+Visualise the posterior spatial fields for each time point
+
+``` r
+# Generate a tidy plot
+preds <- dmesh %>% st_as_sf()
+preds <- rbind(preds, preds, preds, preds) # double length for facet_wrap plotting by model type
+preds <- preds %>% mutate(model = rep(1:4, each = nv),
+                          posterior = c(barrier.fit$summary.random$s$mean))
+preds$model <- factor(preds$model)
+
+p <- ggplot() +
+  theme_bw() +
+  ylab("") + xlab("") +
+  geom_sf(aes(colour = posterior,
+              fill = posterior), data = preds) +
+  scale_colour_discrete_gradient("Posterior mean estimate of spatial field",
+                                 colours = viridis::viridis(15),
+                                 bins = 15,
+                                 limits = c(-4, 11),
+                                 breaks = seq(-4, 10.0, 2),
+                                 guide = guide_colourbar(nbin = 500,
+                                                         raster = T,
+                                                         frame.colour = "black",
+                                                         ticks.colour = "black",
+                                                         frame.linewidth = 1,
+                                                         barwidth = 20,
+                                                         barheight = 1,
+                                                         direction = "horizontal",
+                                                         title.position = "top",
+                                                         title.theme = element_text(angle = 0,
+                                                                                    hjust = 0.5))) +
+  theme(legend.position = "bottom") +
+  geom_sf(aes(), colour = "white", fill = NA, data = st_as_sf(b)) +
+  facet_wrap(~ model)
+print(p)
+```
+
+![](README-visualise%20space%20time-1.png)
