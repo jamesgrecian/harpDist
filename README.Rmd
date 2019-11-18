@@ -182,7 +182,7 @@ barrier.fit <- inla(y ~ 0 + b0 + f(s, model = barrier.model),
 
 Visualise the posterior spatial fields for the two lgcp models
 
-```{r visualise the lgcp, message = F, warning = F}
+```{r visualise the lgcp, message = F, warning = F, fig.height = 6, fig.width = 8}
 # Generate a tidy plot
 preds <- dmesh %>% st_as_sf()
 preds <- rbind(preds, preds) # double length for facet_wrap plotting by model type
@@ -293,7 +293,7 @@ barrier.fit <- inla(form,
 
 Visualise the posterior spatial fields for each time point
 
-```{r visualise space time, message = F, warning = F}
+```{r visualise space time, message = F, warning = F, fig.height = 8, fig.width = 8}
 # Generate a tidy plot
 preds <- dmesh %>% st_as_sf()
 preds <- rbind(preds, preds, preds, preds) # double length for facet_wrap plotting by model type
