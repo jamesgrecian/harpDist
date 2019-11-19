@@ -7,6 +7,7 @@ require(tidyverse)
 require(sf)
 #devtools::install_github("jamesgrecian/mapr")
 require(mapr)
+#devtools::install_github("embiuw/rSRDL")
 require(RSRDL)
 require(viridis)
 require(lubridate)
@@ -39,18 +40,19 @@ dat = dat[!dat$ref %in% c("hp1-9276-04",
 names(dat) <- c("id", "date", "lc", "lon", "lat", "smaj", "smin", "eor")
 
 # Load hp5
-hp5 = get.SRDLpg(theDB = 'hp5', theTable = 'diag', theFields = 'All', theDep = 'All', theRef = 'All',
-                 theHost = 'localhost', thePort = 5432, theUser = 'postgres', thePwd = 'admin') %>% as_tibble()
-hp5 <- hp5 %>% dplyr::select("REF", "D_DATE", "LQ", "LON", "LAT", "SEMI_MAJOR_AXIS", "SEMI_MINOR_AXIS", "ELLIPSE_ORIENTATION")
+hp5 <- Hmisc::mdb.get("~/hp5.mdb",  tables = "diag") %>% as_tibble()
+hp5 <- hp5 %>% dplyr::select("REF", "D.DATE", "LQ", "LON", "LAT", "SEMI.MAJOR.AXIS", "SEMI.MINOR.AXIS", "ELLIPSE.ORIENTATION")
 hp5 = hp5[hp5$REF %in% c("hp5-L764-18", "hp5-L766-18"),] 
 hp5 <- hp5 %>% rename(id = REF,
-                      date = D_DATE,
+                      date = D.DATE,
                       lc = LQ,
                       lon = LON,
                       lat = LAT,
-                      smaj = SEMI_MAJOR_AXIS,
-                      smin = SEMI_MINOR_AXIS,
-                      eor = ELLIPSE_ORIENTATION)
+                      smaj = SEMI.MAJOR.AXIS,
+                      smin = SEMI.MINOR.AXIS,
+                      eor = ELLIPSE.ORIENTATION)
+hp5 <- hp5 %>% mutate(date = mdy_hms(date, tz = "UTC"))
+
 # Load in hp6
 hp6 <- Hmisc::mdb.get("~/hp6.mdb",  tables = "diag") %>% as_tibble()
 hp6 <- hp6 %>% dplyr::select("REF", "D.DATE", "LQ", "LON", "LAT", "SEMI.MAJOR.AXIS", "SEMI.MINOR.AXIS", "ELLIPSE.ORIENTATION")
@@ -66,6 +68,8 @@ hp6 <- hp6 %>% rename(id = REF,
 hp6 <- hp6 %>% mutate(date = mdy_hms(date, tz = "UTC"))
 # Filter out data prior to deployment
 hp6 <- hp6 %>% filter(date > "2019-03-22 00:00:01")
+hp6 <- hp6 %>% filter(case_when(id == "hp6-L752-19" ~ date < "2019-07-1",
+                                id != "hp6-L752-19" ~ date > min(date))) # remove dead locations
 
 # Combine three datasets
 dat <- rbind(dat, hp5, hp6)
@@ -101,6 +105,10 @@ prj = "+proj=laea +lat_0=75 +lon_0=-25 +x_0=0 +y_0=0 +datum=WGS84 +units=km +no_
 # overwrite xy coordinates
 pred[c("x", "y")] <- pred %>% st_as_sf(coords = c("lon", "lat")) %>% sf::st_set_crs(4326) %>% st_transform(prj) %>% st_coordinates()
 
+##############################################
+### Subsample and output indexed dataframe ###
+##############################################
+
 # Subsample
 out <- sample_n(pred, 2500, replace = F)
 
@@ -110,15 +118,32 @@ saveRDS(out, "data/harps2500.rds")
 # Append time index
 source("R/append_time_index.R")
 dat <- append_time_index(out)
+
+# Add season and year indexes
+dat$year_i <- NA
+dat$year_i[dat$index %in% c(1:4)] <- 1
+dat$year_i[dat$index %in% c(5:8)] <- 2
+dat$year_i[dat$index %in% c(9:12)] <- 3
+dat$year_i[dat$index %in% c(13:16)] <- 4
+dat$year_i[dat$index %in% c(17:20)] <- 5
+
+dat$season <- NA
+dat$season[dat$index %in% c(1, 5, 9, 13, 17)] <- 1
+dat$season[dat$index %in% c(2, 6, 10, 14, 18)] <- 2
+dat$season[dat$index %in% c(3, 7, 11, 15, 19)] <- 3
+dat$season[dat$index %in% c(4, 8, 12, 16, 20)] <- 4
+
 # Save file
 saveRDS(dat, "data/harps2500_indexed.rds")
 
-# Plot to check
+#####################
+### Plot to check ###
+#####################
+
 p1 <- ggplot() +
   geom_sf(aes(), data = mapr(pred, prj, buff = 5e5)) +
   geom_sf(aes(), data = dat %>% st_as_sf(coords = c("lon", "lat")) %>% st_set_crs(4326)) +
   coord_sf(xlim = c(-3000, 3000), ylim = c(-3500, 2500), crs = prj, expand = T)
 print(p1)
-
 
 # ends
