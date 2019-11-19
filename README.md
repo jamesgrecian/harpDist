@@ -158,11 +158,11 @@ normal = unlist(over(b, posTri, returnList = T)) # check which mesh triangles ar
 barrier.triangles = setdiff(1:tl, normal)
 poly.barrier = inla.barrier.polygon(mesh, barrier.triangles)
 #> Warning in RGEOSUnaryPredFunc(spgeom, byid, "rgeos_isvalid"): Self-intersection
-#> at or near point -3996.6879684199998 -2259.7720476
+#> at or near point -3997.4701449999998 -2232.5782418700001
 #> Warning in gUnaryUnion(mesh.polys): Invalid objects found; consider using
 #> set_RGEOS_CheckValidity(2L)
 #> Warning in RGEOSUnaryPredFunc(spgeom, byid, "rgeos_isvalid"): Self-intersection
-#> at or near point -5030.5772590200004 -2391.1795245200001
+#> at or near point -4997.4701450000002 -2431.49060925
 #> Warning in gUnaryUnion(mesh.polys): Invalid objects found; consider using
 #> set_RGEOS_CheckValidity(2L)
 
@@ -236,20 +236,6 @@ Add the time component
 Extend the barrier model to include a time varying spatial field
 
 ``` r
-# Add time indices for inla model structure
-# This should be included in append_time_index.R
-dat$year_i <- NA
-dat$year_i[dat$index %in% c(1:4)] <- 1
-dat$year_i[dat$index %in% c(5:8)] <- 2
-dat$year_i[dat$index %in% c(9:12)] <- 3
-dat$year_i[dat$index %in% c(13:16)] <- 4
-dat$year_i[dat$index %in% c(17:20)] <- 5
-dat$season <- NA
-dat$season[dat$index %in% c(1, 5, 9, 13, 17)] <- 1
-dat$season[dat$index %in% c(2, 6, 10, 14, 18)] <- 2
-dat$season[dat$index %in% c(3, 7, 11, 15, 19)] <- 3
-dat$season[dat$index %in% c(4, 8, 12, 16, 20)] <- 4
-
 # Create a 1d time mesh for the annual cycle
 tmesh <- inla.mesh.1d(loc = 1:4, boundary = "free")
 (k <- length(tmesh$loc)) # number of time periods
