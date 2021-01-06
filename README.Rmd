@@ -195,13 +195,29 @@ preds$model <- relevel(preds$model, ref = "spde")
 p <- ggplot() +
   theme_bw() +
   ylab("") + xlab("") +
-  geom_sf(aes(colour = posterior,
-              fill = posterior), data = preds) +
+  geom_sf(aes(fill = posterior,
+              colour = posterior), data = preds) +
+  scale_fill_discrete_gradient("Posterior mean estimate of spatial field",
+                                 colours = viridis::viridis(10),
+                                 bins = 10,
+                                 limits = c(-8, 12),
+                                 breaks = seq(-8, 12, 4),
+                                 guide = guide_colourbar(nbin = 500,
+                                                         raster = T,
+                                                         frame.colour = "black",
+                                                         ticks.colour = "black",
+                                                         frame.linewidth = 1,
+                                                         barwidth = 20,
+                                                         barheight = 1,
+                                                         direction = "horizontal",
+                                                         title.position = "top",
+                                                         title.theme = element_text(angle = 0,
+                                                                                    hjust = 0.5))) +
   scale_colour_discrete_gradient("Posterior mean estimate of spatial field",
-                                 colours = viridis::viridis(13),
-                                 bins = 13,
-                                 limits = c(-6.5, 13.0),
-                                 breaks = seq(-6.5, 13.0, 3),
+                                 colours = viridis::viridis(10),
+                                 bins = 10,
+                                 limits = c(-8, 12),
+                                 breaks = seq(-8, 12, 4),
                                  guide = guide_colourbar(nbin = 500,
                                                          raster = T,
                                                          frame.colour = "black",
@@ -290,8 +306,24 @@ preds$model <- factor(preds$model)
 p <- ggplot() +
   theme_bw() +
   ylab("") + xlab("") +
-  geom_sf(aes(colour = posterior,
-              fill = posterior), data = preds) +
+  geom_sf(aes(fill = posterior,
+              colour = posterior), data = preds) +
+  scale_fill_discrete_gradient("Posterior mean estimate of spatial field",
+                                 colours = viridis::viridis(15),
+                                 bins = 15,
+                                 limits = c(-4, 11),
+                                 breaks = seq(-4, 10.0, 2),
+                                 guide = guide_colourbar(nbin = 500,
+                                                         raster = T,
+                                                         frame.colour = "black",
+                                                         ticks.colour = "black",
+                                                         frame.linewidth = 1,
+                                                         barwidth = 20,
+                                                         barheight = 1,
+                                                         direction = "horizontal",
+                                                         title.position = "top",
+                                                         title.theme = element_text(angle = 0,
+                                                                                    hjust = 0.5))) +
   scale_colour_discrete_gradient("Posterior mean estimate of spatial field",
                                  colours = viridis::viridis(15),
                                  bins = 15,
