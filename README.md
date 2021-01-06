@@ -1,13 +1,13 @@
 <!-- README.md is generated from README.Rmd. Please edit that file -->
-[![Project Status: Active – The project has reached a stable, usable
-state and is being actively
-developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
+[![Project Status: WIP – Initial development is in progress, but there
+has not yet been a stable, usable release suitable for the
+public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 
 harpDist
 ========
 
-**harpDist** is a framework for fitting spatio-temporal log Gaussian Cox
-Processes to animal telemetry data.
+**harpDist** is a repository for fitting spatio-temporal log Gaussian
+Cox Processes to animal telemetry data.
 
 Given a set of locations, for example from a tagged marine animal,
 `harpDist` will generate a global shapefile for mapping, assist with
